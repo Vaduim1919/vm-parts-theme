@@ -1,0 +1,43 @@
+{{ header }}
+<div id="common-home" class="container vm-home-wrap">
+  <div class="vm-home-top">
+    <aside class="vm-home-catalog">
+      <div class="vm-home-catalog-title"><i class="fa fa-bars"></i> {{ vm_t.text_catalog }}</div>
+      <ul class="vm-catalog-list vm-catalog-static">
+        {% for cat in vm_menu %}
+        <li class="{% if cat.children %}has-children{% endif %}">
+          <a href="{{ cat.href }}">{{ cat.name }}{% if cat.children %}<i class="fa fa-angle-right"></i>{% endif %}</a>
+          {% if cat.children %}
+          <div class="vm-flyout">
+            <a class="vm-flyout-title" href="{{ cat.href }}">{{ cat.name }}</a>
+            <ul>{% for child in cat.children %}<li><a href="{{ child.href }}">{{ child.name }}</a></li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {{ column_left }}
+    </aside>
+    <div class="vm-home-main">{{ content_top }}</div>
+  </div>
+  {% if vm.benefits %}
+  <div class="vm-benefits">
+    {% for b in vm.benefits %}
+    <div class="vm-benefit"><span class="vm-benefit-ico"><i class="fa fa-check"></i></span><span><b>{{ b.title }}</b><br><small>{{ b.text }}</small></span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {{ content_bottom }}
+  {% set wall = [] %}
+  {% for cat in vm_menu %}{% if cat.image %}{% set wall = wall|merge([cat]) %}{% endif %}{% endfor %}
+  {% if wall %}
+  <h2 class="vm-h2">{{ vm_t.text_popular_cats }}</h2>
+  <div class="vm-wall">
+    {% for cat in wall|slice(0, 12) %}
+    <a href="{{ cat.href }}" class="vm-wall-item"><img src="{{ cat.image }}" alt="{{ cat.name }}" loading="lazy"><span>{{ cat.name }}</span></a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {{ column_right }}
+</div>
+{{ footer }}

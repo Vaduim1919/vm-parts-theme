@@ -1,0 +1,126 @@
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header">
+    <div class="container-fluid">
+      <div class="pull-right">
+        <button type="submit" form="form-vm-theme" data-toggle="tooltip" title="{{ button_save }}" class="btn btn-primary"><i class="fa fa-save"></i></button>
+        <a href="{{ cancel }}" data-toggle="tooltip" title="{{ button_cancel }}" class="btn btn-default"><i class="fa fa-reply"></i></a>
+      </div>
+      <h1>{{ heading_title }}</h1>
+      <ul class="breadcrumb">
+        {% for breadcrumb in breadcrumbs %}<li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="container-fluid">
+    {% if error_warning %}<div class="alert alert-danger alert-dismissible"><i class="fa fa-exclamation-circle"></i> {{ error_warning }}<button type="button" class="close" data-dismiss="alert">&times;</button></div>{% endif %}
+    {% if success %}<div class="alert alert-success alert-dismissible"><i class="fa fa-check-circle"></i> {{ success }}<button type="button" class="close" data-dismiss="alert">&times;</button></div>{% endif %}
+
+    <div class="well" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+      <div style="flex:1 1 300px">{{ text_theme_state|format(current_directory) }}<br><small class="text-muted">{{ help_activate|format(prev_directory ? prev_directory : current_directory) }}</small></div>
+      {% if is_active %}
+      <a href="{{ restore }}" class="btn btn-warning btn-lg"><i class="fa fa-undo"></i> {{ button_restore }}</a>
+      {% else %}
+      <a href="{{ activate }}" class="btn btn-success btn-lg"><i class="fa fa-paint-brush"></i> {{ button_activate }}</a>
+      {% endif %}
+    </div>
+
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-refresh"></i> {{ tab_update }}</h3></div>
+      <div class="panel-body">
+        <p>{{ text_version|format(version) }}</p>
+        <p>
+          <button type="button" id="vm-check" class="btn btn-default"><i class="fa fa-search"></i> {{ button_check }}</button>
+          <button type="button" id="vm-update" class="btn btn-success" style="display:none"><i class="fa fa-download"></i> <span>{{ button_update }}</span></button>
+        </p>
+        <div id="vm-upd-result"></div>
+        <hr>
+        <p class="text-muted">{{ text_upload_help }}</p>
+        <form action="{{ upload_action }}" method="post" enctype="multipart/form-data" class="form-inline">
+          <input type="file" name="file" accept=".zip" class="form-control" required>
+          <button type="submit" class="btn btn-primary" onclick="return confirm('{{ text_confirm_upd|e('js') }}');"><i class="fa fa-upload"></i> {{ button_upload }}</button>
+        </form>
+        <hr>
+        <p><b>{{ text_backups }}</b></p>
+        {% if backups %}
+        <table class="table table-condensed" style="max-width:520px">
+          {% for b in backups %}
+          <tr><td>v{{ b.version }}</td><td class="text-muted">{{ b.date }}</td><td class="text-right"><a href="{{ rollback }}&amp;backup={{ b.file }}" class="btn btn-warning btn-xs" onclick="return confirm('{{ text_confirm_rb|e('js') }}');"><i class="fa fa-undo"></i> {{ button_rollback }}</a></td></tr>
+          {% endfor %}
+        </table>
+        {% else %}<p class="text-muted">{{ text_no_backups }}</p>{% endif %}
+      </div>
+    </div>
+
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-pencil"></i> {{ text_edit }}</h3></div>
+      <div class="panel-body">
+        <form action="{{ action }}" method="post" enctype="multipart/form-data" id="form-vm-theme" class="form-horizontal">
+          <ul class="nav nav-tabs">
+            <li class="active"><a href="#tab-general" data-toggle="tab">{{ tab_general }}</a></li>
+            <li><a href="#tab-home" data-toggle="tab">{{ tab_home }}</a></li>
+            <li><a href="#tab-code" data-toggle="tab">{{ tab_code }}</a></li>
+            <li><a href="#tab-update" data-toggle="tab">{{ tab_update }} <span class="label label-default">{{ version }}</span></a></li>
+          </ul>
+          <div class="tab-content">
+            <div class="tab-pane active" id="tab-general">
+              <div class="form-group">
+                <label class="col-sm-3 control-label">{{ entry_status }}</label>
+                <div class="col-sm-9"><select name="module_vm_theme_status" class="form-control"><option value="1" {% if module_vm_theme_status %}selected{% endif %}>{{ text_enabled }}</option><option value="0" {% if not module_vm_theme_status %}selected{% endif %}>{{ text_disabled }}</option></select></div>
+              </div>
+              <div class="form-group"><label class="col-sm-3 control-label">{{ entry_phone }}</label><div class="col-sm-9"><p class="form-control-static text-muted">{{ help_phone }}</p></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-phone2">{{ entry_phone2 }}</label><div class="col-sm-9"><input id="i-phone2" type="text" name="module_vm_theme_phone2" value="{{ module_vm_theme_phone2 }}" class="form-control" placeholder="+380 93 511 02 56"></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-viber">{{ entry_viber }}</label><div class="col-sm-9"><input id="i-viber" type="text" name="module_vm_theme_viber" value="{{ module_vm_theme_viber }}" class="form-control" placeholder="380956920868"></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-tg">{{ entry_telegram }}</label><div class="col-sm-9"><input id="i-tg" type="text" name="module_vm_theme_telegram" value="{{ module_vm_theme_telegram }}" class="form-control" placeholder="@vmautoparts_bot"></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-ig">{{ entry_instagram }}</label><div class="col-sm-9"><input id="i-ig" type="text" name="module_vm_theme_instagram" value="{{ module_vm_theme_instagram }}" class="form-control"></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-fb">{{ entry_facebook }}</label><div class="col-sm-9"><input id="i-fb" type="text" name="module_vm_theme_facebook" value="{{ module_vm_theme_facebook }}" class="form-control"></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-hours">{{ entry_hours }}</label><div class="col-sm-9"><input id="i-hours" type="text" name="module_vm_theme_hours" value="{{ module_vm_theme_hours }}" class="form-control" placeholder="Пн–Сб 9:00–18:00"></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-fallback">{{ entry_fallback }}</label><div class="col-sm-9">
+                <select id="i-fallback" name="module_vm_theme_fallback" class="form-control"><option value="">—</option>{% for dir in directories %}<option value="{{ dir }}" {% if dir == module_vm_theme_fallback %}selected{% endif %}>{{ dir }}</option>{% endfor %}</select>
+                <p class="help-block">{{ help_fallback }}</p></div></div>
+            </div>
+            <div class="tab-pane" id="tab-home">
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-ben">{{ entry_benefits }}</label><div class="col-sm-9"><textarea id="i-ben" name="module_vm_theme_benefits" rows="5" class="form-control">{{ module_vm_theme_benefits }}</textarea><p class="help-block">{{ help_benefits }}</p></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-new">{{ entry_new_days }}</label><div class="col-sm-9"><input id="i-new" type="number" name="module_vm_theme_new_days" value="{{ module_vm_theme_new_days }}" class="form-control"></div></div>
+            </div>
+            <div class="tab-pane" id="tab-code">
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-head">{{ entry_head_code }}</label><div class="col-sm-9"><textarea id="i-head" name="module_vm_theme_head_code" rows="14" class="form-control" style="font-family:monospace;font-size:12px">{{ module_vm_theme_head_code }}</textarea><p class="help-block">{{ help_head_code }}</p></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-body">{{ entry_body_code }}</label><div class="col-sm-9"><textarea id="i-body" name="module_vm_theme_body_code" rows="5" class="form-control" style="font-family:monospace;font-size:12px">{{ module_vm_theme_body_code }}</textarea></div></div>
+            </div>
+            <div class="tab-pane" id="tab-update">
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-upd">{{ entry_update_url }}</label><div class="col-sm-9"><input id="i-upd" type="text" name="module_vm_theme_update_url" value="{{ module_vm_theme_update_url }}" class="form-control"><p class="help-block">{{ help_update_url }}</p></div></div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="text/javascript"><!--
+(function () {
+  var checkUrl = '{{ check_url|e('js') }}', updateUrl = '{{ update_url|e('js') }}';
+  var $r = $('#vm-upd-result'), $u = $('#vm-update');
+  var esc = function (s) { return $('<div/>').text(s || '').html(); };
+  $('#vm-check').on('click', function () {
+    var $b = $(this).prop('disabled', true);
+    $r.html('<p class="text-muted">{{ text_checking|e('js') }}</p>'); $u.hide();
+    $.getJSON(checkUrl, function (j) {
+      $b.prop('disabled', false);
+      if (j.error) { $r.html('<div class="alert alert-danger">' + esc(j.error) + '</div>'); return; }
+      var html = '<div class="alert ' + (j.newer ? 'alert-info' : 'alert-success') + '">' + esc(j.message) + (j.notes ? '<br><small style="white-space:pre-line">' + esc(j.notes) + '</small>' : '') + '</div>';
+      $r.html(html);
+      if (j.newer) { $u.show().find('span').text('{{ button_update|e('js') }} ' + j.version); }
+    }).fail(function (x) { $b.prop('disabled', false); $r.html('<div class="alert alert-danger">' + x.status + '</div>'); });
+  });
+  $u.on('click', function () {
+    if (!confirm('{{ text_confirm_upd|e('js') }}')) return;
+    $u.prop('disabled', true); $r.append('<p class="text-muted">{{ text_updating|e('js') }}</p>');
+    $.post(updateUrl, {}, function (j) {
+      if (j.error) { $u.prop('disabled', false); $r.html('<div class="alert alert-danger">' + esc(j.error) + '</div>'); return; }
+      $r.html('<div class="alert alert-success">' + esc(j.success) + '</div>'); $u.hide();
+      setTimeout(function () { location.reload(); }, 1500);
+    }, 'json').fail(function (x) { $u.prop('disabled', false); $r.html('<div class="alert alert-danger">' + x.status + ' ' + esc((x.responseText || '').slice(0, 300)) + '</div>'); });
+  });
+})();
+//--></script>
+{{ footer }}

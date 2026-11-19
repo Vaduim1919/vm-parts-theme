@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html dir="{{ direction }}" lang="{{ lang }}">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>{{ title }}</title>
+<base href="{{ base }}" />
+{% if description %}<meta name="description" content="{{ description }}" />{% endif %}
+{% if keywords %}<meta name="keywords" content="{{ keywords }}" />{% endif %}
+<script src="{{ vm_jquery }}" type="text/javascript"></script>
+<link href="catalog/view/javascript/bootstrap/css/bootstrap.min.css" rel="stylesheet" media="screen" />
+<script src="catalog/view/javascript/bootstrap/js/bootstrap.min.js" type="text/javascript"></script>
+<link href="catalog/view/javascript/font-awesome/css/font-awesome.min.css" rel="stylesheet" type="text/css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link href="catalog/view/theme/vm_parts/stylesheet/stylesheet.css?v=1.0" rel="stylesheet">
+{% for style in styles %}
+<link href="{{ style.href }}" type="text/css" rel="{{ style.rel }}" media="{{ style.media }}" />
+{% endfor %}
+{% for script in scripts %}
+<script src="{{ script }}" type="text/javascript"></script>
+{% endfor %}
+<script src="catalog/view/javascript/common.js" type="text/javascript"></script>
+{% for link in links %}
+<link href="{{ link.href }}" rel="{{ link.rel }}" />
+{% endfor %}
+{% for analytic in analytics %}
+{{ analytic }}
+{% endfor %}
+{% if icon %}<link href="{{ icon }}" rel="icon" />{% endif %}
+{{ vm.head_code }}
+</head>
+<body class="vm{% if vm_is_home %} vm-home{% endif %}">
+{{ vm.body_code }}
+<div class="vm-topbar">
+  <div class="container vm-row">
+    <nav class="vm-toplinks" aria-label="Інформація">
+      {% for info in vm_infos %}<a href="{{ info.href }}">{{ info.title }}</a>{% endfor %}
+      <a href="{{ vm_contact }}">{{ vm_t.text_contacts }}</a>
+    </nav>
+    <div class="vm-topright">
+      {% if vm.hours %}<span>{{ vm.hours }}</span>{% endif %}
+      {{ language }}{{ currency }}
+    </div>
+  </div>
+</div>
+<header class="vm-header">
+  <div class="container vm-row vm-header-row">
+    <button type="button" class="vm-burger" aria-label="{{ vm_t.text_menu }}" data-toggle="collapse" data-target="#vm-mobile-menu"><i class="fa fa-bars"></i></button>
+    <div id="logo" class="vm-logo">{% if logo %}<a href="{{ home }}"><img src="{{ logo }}" title="{{ name }}" alt="{{ name }}" /></a>{% else %}<a href="{{ home }}" class="vm-logo-text">{{ name }}</a>{% endif %}</div>
+    <div class="vm-phones">
+      {% if vm.phone %}<a class="vm-phone" href="{{ vm.phone_href }}">{{ vm.phone }}</a>{% endif %}
+      {% if vm.phone2 %}<a class="vm-phone vm-phone2" href="{{ vm.phone2_href }}">{{ vm.phone2 }}</a>{% endif %}
+      <a class="vm-callback" href="{{ vm_contact }}">{{ vm_t.text_callback }}</a>
+    </div>
+    <div class="vm-messengers">
+      {% if vm.viber %}<a href="{{ vm.viber }}" class="vm-msg vm-msg-viber" aria-label="Viber"><i class="fa fa-phone"></i></a>{% endif %}
+      {% if vm.telegram %}<a href="{{ vm.telegram }}" class="vm-msg vm-msg-tg" aria-label="Telegram" target="_blank" rel="noopener"><i class="fa fa-paper-plane"></i></a>{% endif %}
+    </div>
+    <div class="vm-search-wrap">{{ search }}</div>
+    <div class="vm-icons">
+      <a href="{{ wishlist }}" id="wishlist-total" class="vm-icon-link" title="{{ text_wishlist }}"><i class="fa fa-heart-o"></i><span>{{ vm_t.text_wishlist }}</span></a>
+      <div class="dropdown vm-account">
+        <a href="{{ account }}" class="vm-icon-link dropdown-toggle" data-toggle="dropdown" title="{{ text_account }}"><i class="fa fa-user-o"></i><span>{{ vm_t.text_account }}</span></a>
+        <ul class="dropdown-menu dropdown-menu-right">
+          {% if logged %}
+          <li><a href="{{ account }}">{{ text_account }}</a></li>
+          <li><a href="{{ order }}">{{ text_order }}</a></li>
+          <li><a href="{{ logout }}">{{ text_logout }}</a></li>
+          {% else %}
+          <li><a href="{{ register }}">{{ text_register }}</a></li>
+          <li><a href="{{ login }}">{{ text_login }}</a></li>
+          {% endif %}
+        </ul>
+      </div>
+      {{ cart }}
+    </div>
+  </div>
+</header>
+<div class="vm-navbar">
+  <div class="container vm-row">
+    <div class="vm-catalog-drop{% if vm_is_home %} vm-catalog-drop-home{% endif %}">
+      <button type="button" class="vm-catalog-btn"><i class="fa fa-bars"></i> {{ vm_t.text_catalog }}</button>
+      <ul class="vm-catalog-list">
+        {% for cat in vm_menu %}
+        <li class="{% if cat.children %}has-children{% endif %}">
+          <a href="{{ cat.href }}">{{ cat.name }}{% if cat.children %}<i class="fa fa-angle-right"></i>{% endif %}</a>
+          {% if cat.children %}
+          <div class="vm-flyout">
+            <a class="vm-flyout-title" href="{{ cat.href }}">{{ cat.name }}</a>
+            <ul>{% for child in cat.children %}<li><a href="{{ child.href }}">{{ child.name }}</a></li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    <nav class="vm-quicklinks">
+      {% for cat in vm_menu|slice(0, 6) %}<a href="{{ cat.href }}">{{ cat.name }}</a>{% endfor %}
+      <a href="{{ vm_special }}" class="vm-quick-sale">%</a>
+    </nav>
+  </div>
+</div>
+<div id="vm-mobile-menu" class="collapse vm-mobile-menu">
+  <div class="container">
+    {% for cat in vm_menu %}<a href="{{ cat.href }}">{{ cat.name }}</a>{% endfor %}
+    {% for info in vm_infos %}<a href="{{ info.href }}" class="vm-mm-info">{{ info.title }}</a>{% endfor %}
+    <a href="{{ vm_contact }}" class="vm-mm-info">{{ vm_t.text_contacts }}</a>
+  </div>
+</div>

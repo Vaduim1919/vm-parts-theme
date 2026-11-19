@@ -1,0 +1,75 @@
+<footer class="vm-footer">
+  <div class="container vm-footer-grid">
+    <div class="vm-footer-brand">
+      <div class="vm-footer-name">{{ vm_name }}</div>
+      {% if vm.phone %}<a class="vm-footer-phone" href="{{ vm.phone_href }}">{{ vm.phone }}</a>{% endif %}
+      {% if vm.phone2 %}<a class="vm-footer-phone" href="{{ vm.phone2_href }}">{{ vm.phone2 }}</a>{% endif %}
+      {% if vm_open %}<div>{{ vm_open }}</div>{% endif %}
+      {% if vm_address %}<div>{{ vm_address }}</div>{% endif %}
+    </div>
+    {% if informations %}
+    <div>
+      <h5>{{ vm_t.text_info }}</h5>
+      <ul class="list-unstyled">
+        {% for information in informations %}<li><a href="{{ information.href }}">{{ information.title }}</a></li>{% endfor %}
+        <li><a href="{{ contact }}">{{ text_contact }}</a></li>
+        <li><a href="{{ return }}">{{ text_return }}</a></li>
+      </ul>
+    </div>
+    {% endif %}
+    <div>
+      <h5>{{ vm_t.text_catalog }}</h5>
+      <ul class="list-unstyled">
+        {% for cat in vm_menu|slice(0, 7) %}<li><a href="{{ cat.href }}">{{ cat.name }}</a></li>{% endfor %}
+        <li><a href="{{ special }}">{{ text_special }}</a></li>
+      </ul>
+    </div>
+    <div>
+      <h5>{{ vm_t.text_cabinet }}</h5>
+      <ul class="list-unstyled">
+        <li><a href="{{ account }}">{{ text_account }}</a></li>
+        <li><a href="{{ order }}">{{ text_order }}</a></li>
+        <li><a href="{{ wishlist }}">{{ text_wishlist }}</a></li>
+        <li><a href="{{ sitemap }}">{{ text_sitemap }}</a></li>
+      </ul>
+      {% if vm.instagram or vm.facebook or vm.telegram or vm.viber %}
+      <h5 class="vm-footer-social-title">{{ vm_t.text_social }}</h5>
+      <div class="vm-footer-social">
+        {% if vm.instagram %}<a href="{{ vm.instagram }}" target="_blank" rel="noopener" aria-label="Instagram"><i class="fa fa-instagram"></i></a>{% endif %}
+        {% if vm.facebook %}<a href="{{ vm.facebook }}" target="_blank" rel="noopener" aria-label="Facebook"><i class="fa fa-facebook"></i></a>{% endif %}
+        {% if vm.telegram %}<a href="{{ vm.telegram }}" target="_blank" rel="noopener" aria-label="Telegram"><i class="fa fa-paper-plane"></i></a>{% endif %}
+        {% if vm.viber %}<a href="{{ vm.viber }}" aria-label="Viber"><i class="fa fa-phone"></i></a>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="vm-footer-bottom">
+    <div class="container vm-row">
+      <span>{{ vm_name }} © {{ vm.year }}</span>
+      <span>{{ vm_t.text_payments }}</span>
+    </div>
+  </div>
+</footer>
+{% if vm.viber or vm.telegram or vm.phone %}
+<div class="vm-fab" id="vm-fab">
+  <div class="vm-fab-menu">
+    {% if vm.viber %}<a href="{{ vm.viber }}" class="vm-fab-viber"><i class="fa fa-phone"></i> Viber</a>{% endif %}
+    {% if vm.telegram %}<a href="{{ vm.telegram }}" class="vm-fab-tg" target="_blank" rel="noopener"><i class="fa fa-paper-plane"></i> Telegram</a>{% endif %}
+    {% if vm.phone %}<a href="{{ vm.phone_href }}" class="vm-fab-call"><i class="fa fa-phone"></i> {{ vm.phone }}</a>{% endif %}
+  </div>
+  <button type="button" class="vm-fab-btn" aria-label="{{ vm_t.text_write_us }}" onclick="document.getElementById('vm-fab').classList.toggle('is-open')"><i class="fa fa-comments"></i></button>
+</div>
+{% endif %}
+{% for style in styles %}
+<link href="{{ style.href }}" type="text/css" rel="{{ style.rel }}" media="{{ style.media }}" />
+{% endfor %}
+{% for script in scripts %}
+<script src="{{ script }}" type="text/javascript"></script>
+{% endfor %}
+<script>
+(function(){
+  var d=document.querySelector('.vm-catalog-drop:not(.vm-catalog-drop-home)');
+  if(d){d.querySelector('.vm-catalog-btn').addEventListener('click',function(e){e.stopPropagation();d.classList.toggle('is-open');});document.addEventListener('click',function(e){if(!d.contains(e.target))d.classList.remove('is-open');});}
+})();
+</script>
+</body></html>
