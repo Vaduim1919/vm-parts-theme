@@ -1,0 +1,34 @@
+{{ header }}
+<div id="information-information" class="container vm-info-page">
+  <ul class="breadcrumb">
+    {% for breadcrumb in breadcrumbs %}<li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>{% endfor %}
+  </ul>
+  <div class="vm-info-layout">
+    <aside class="vm-info-side">
+      <nav class="vm-box vm-info-nav" aria-label="{{ vm_t.text_info }}">
+        <div class="vm-info-nav-title">{{ vm_t.text_buyers }}</div>
+        {% for info in vm_infos %}<a href="{{ info.href }}"{% if info.active %} class="is-active"{% endif %}>{{ info.title }}</a>{% endfor %}
+        <a href="{{ vm_contact }}">{{ vm_t.text_contacts }}</a>
+      </nav>
+      <div class="vm-box vm-help-box">
+        <div class="vm-help-title">{{ vm_t.text_need_help }}</div>
+        {% if vm.phone %}<a class="vm-help-phone" href="{{ vm.phone_href }}">{{ vm.phone }}</a>{% endif %}
+        {% if vm.phone2 %}<a class="vm-help-phone vm-help-phone2" href="{{ vm.phone2_href }}">{{ vm.phone2 }}</a>{% endif %}
+        <div class="vm-help-btns">
+          {% if vm.viber %}<a href="{{ vm.viber }}" class="vm-help-btn vm-help-viber"><i class="fa fa-phone"></i> Viber</a>{% endif %}
+          {% if vm.telegram %}<a href="{{ vm.telegram }}" class="vm-help-btn vm-help-tg" target="_blank" rel="noopener"><i class="fa fa-paper-plane"></i> Telegram</a>{% endif %}
+        </div>
+      </div>
+      {{ column_left }}
+    </aside>
+    <div id="content" class="vm-info-main">{{ content_top }}
+      <article class="vm-box vm-article">
+        <h1>{{ heading_title }}</h1>
+        {{ description }}
+      </article>
+      {{ content_bottom }}
+    </div>
+    {% if column_right %}<aside class="vm-info-right">{{ column_right }}</aside>{% endif %}
+  </div>
+</div>
+{{ footer }}

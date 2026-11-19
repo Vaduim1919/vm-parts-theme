@@ -60,6 +60,10 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			case 'product/product':
 				$this->productPage($data);
 				break;
+			case 'information/information':
+			case 'information/contact':
+				$this->infoPages($data);
+				break;
 		}
 	}
 
@@ -167,6 +171,26 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		$data['vm_contact'] = $this->url->link('information/contact');
 		$data['vm_special'] = $this->url->link('product/special');
+	}
+
+	private function infoPages(&$data) {
+		$this->load->model('catalog/information');
+
+		$current = isset($this->request->get['information_id']) ? (int)$this->request->get['information_id'] : 0;
+
+		$data['vm_infos'] = array();
+
+		foreach ($this->model_catalog_information->getInformations() as $info) {
+			if ($info['bottom']) {
+				$data['vm_infos'][] = array(
+					'title'  => $info['title'],
+					'href'   => $this->url->link('information/information', 'information_id=' . $info['information_id']),
+					'active' => (int)$info['information_id'] === $current
+				);
+			}
+		}
+
+		$data['vm_contact'] = $this->url->link('information/contact');
 	}
 
 	// All top-level categories (no "top" flag needed) with their children

@@ -276,3 +276,80 @@ body.vm a:hover,body.vm a:focus{color:var(--vm-blue);text-decoration:none}
 .vm-topbar{position:relative;z-index:1030}
 .vm-header{position:relative;z-index:1020}
 .vm-header .dropdown-menu,.vm-topbar .dropdown-menu{z-index:1040}
+
+/* 1.1.3: card — price on its own line, full-width buy button (long prices like "₴1054.00грн") */
+.vm-card-bottom{flex-direction:column;align-items:stretch;gap:10px}
+.vm-price{flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:2px 8px}
+.vm-price b{font-size:21px;white-space:normal;overflow-wrap:anywhere}
+.vm-buy{width:100%;padding:11px 14px}
+.vm-card-name{min-height:40px}
+
+/* 1.1.3: information pages */
+.vm-info-layout{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;margin-top:10px}
+.vm-info-side{flex:1 1 250px;max-width:290px;display:flex;flex-direction:column;gap:16px}
+.vm-info-side>.list-group,.vm-info-side>.panel{margin:0}
+.vm-info-main{flex:999 1 560px;min-width:0}
+.vm-info-right{flex:1 1 250px;max-width:290px}
+.vm-info-nav{padding:8px 0;overflow:hidden}
+.vm-info-nav-title{font-weight:700;font-size:15px;padding:8px 18px 10px}
+.vm-info-nav a{display:block;padding:10px 18px;border-top:1px solid #f0f2f5;font-weight:500}
+.vm-info-nav a:hover{background:var(--vm-blue-soft)}
+.vm-info-nav a.is-active{color:var(--vm-blue)!important;background:var(--vm-blue-soft);box-shadow:inset 3px 0 0 var(--vm-blue)}
+.vm-help-box{padding:18px;display:flex;flex-direction:column;gap:6px}
+.vm-help-title{font-weight:700;font-size:15px;margin-bottom:4px}
+.vm-help-phone{font-size:18px;font-weight:700}
+.vm-help-phone2{font-size:15px;font-weight:500;color:var(--vm-muted)!important}
+.vm-help-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.vm-help-btn{flex:1 1 100px;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:40px;border-radius:8px;color:#fff!important;font-weight:700}
+.vm-help-viber{background:#7360f2}.vm-help-tg{background:#229ed9}
+.vm-help-btn:hover{filter:brightness(1.08)}
+.vm-article{padding:28px 32px;font-size:15px;line-height:1.65;color:#2b3542}
+.vm-article h1{margin:0 0 18px!important;font-size:30px}
+.vm-article h2{font-size:21px!important;font-weight:700;margin:26px 0 10px}
+.vm-article h3{font-size:18px!important;font-weight:700;margin:22px 0 8px}
+.vm-article h4{font-size:16px!important;font-weight:700;margin:18px 0 6px}
+.vm-article p{margin:0 0 12px}
+.vm-article ul,.vm-article ol{padding-left:0;margin:0 0 14px;list-style:none}
+.vm-article ul li{position:relative;padding-left:22px;margin:6px 0}
+.vm-article ul li:before{content:"";position:absolute;left:4px;top:.6em;width:8px;height:8px;border-radius:50%;background:var(--vm-green)}
+.vm-article ol{counter-reset:vmol}
+.vm-article ol li{counter-increment:vmol;position:relative;padding-left:30px;margin:6px 0}
+.vm-article ol li:before{content:counter(vmol);position:absolute;left:0;top:1px;width:22px;height:22px;border-radius:50%;background:var(--vm-blue-soft);color:var(--vm-blue);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.vm-article table{width:100%;border-collapse:collapse;margin:0 0 16px}
+.vm-article table td,.vm-article table th{border:1px solid var(--vm-line);padding:8px 12px}
+.vm-article table th{background:var(--vm-bg)}
+.vm-article strong,.vm-article b{color:var(--vm-text)}
+.vm-article img{max-width:100%;height:auto;border-radius:8px}
+.vm-article a{color:var(--vm-blue)!important;text-decoration:underline}
+
+/* 1.1.3: contact page */
+.vm-contact h1{margin:10px 0 18px}
+.vm-contact-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:16px}
+.vm-contact-card{padding:20px;display:flex;gap:16px;align-items:flex-start}
+.vm-cc-ico{width:48px;height:48px;flex:0 0 48px;border-radius:50%;background:var(--vm-blue-soft);color:var(--vm-blue);display:flex;align-items:center;justify-content:center;font-size:22px}
+.vm-cc-label{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--vm-light);margin-bottom:4px}
+.vm-contact-card address{margin:4px 0 8px;color:var(--vm-muted)}
+.vm-cc-phone{display:block;font-size:19px;font-weight:700}
+.vm-cc-open{color:var(--vm-muted);line-height:1.7}
+.vm-cc-link{color:var(--vm-blue)!important;font-weight:500}
+.vm-contact-comment{padding:16px 20px;margin-bottom:16px;color:var(--vm-muted)}
+.vm-contact-form{padding:24px 28px;margin-top:4px}
+.vm-contact-form h2{font-size:21px;font-weight:700;margin:0 0 16px}
+.vm-form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0 16px}
+.vm-contact-form .control-label{font-weight:500}
+.vm-submit{width:auto;padding:12px 28px;font-size:15px}
+@media (max-width:767px){
+  .vm-info-side{max-width:none;order:2}
+  .vm-article{padding:20px 18px}
+  .vm-article h1{font-size:24px}
+}
+/* 1.1.3: header always on one line on desktop */
+@media (min-width:768px){
+  .vm-header-row{flex-wrap:nowrap}
+  .vm-search-wrap{flex:1 1 auto;min-width:180px}
+  .vm-icons{flex:0 0 auto}
+  .vm-cart .vm-cart-btn #cart-total{max-width:190px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle}
+}
+@media (min-width:768px) and (max-width:1100px){
+  .vm-messengers,.vm-callback{display:none}
+}

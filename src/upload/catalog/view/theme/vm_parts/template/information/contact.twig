@@ -1,0 +1,84 @@
+{{ header }}
+<div id="information-contact" class="container vm-info-page">
+  <ul class="breadcrumb">
+    {% for breadcrumb in breadcrumbs %}<li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>{% endfor %}
+  </ul>
+  <div id="content" class="vm-contact">{{ content_top }}
+    <h1>{{ heading_title }}</h1>
+    <div class="vm-contact-cards">
+      <div class="vm-box vm-contact-card">
+        <span class="vm-cc-ico"><i class="fa fa-map-marker"></i></span>
+        <div>
+          <div class="vm-cc-label">{{ text_location }}</div>
+          <b>{{ store }}</b>
+          <address>{{ address }}</address>
+          {% if geocode %}<a href="https://maps.google.com/maps?q={{ geocode|url_encode }}&hl={{ geocode_hl }}&t=m&z=15" target="_blank" rel="noopener" class="vm-cc-link"><i class="fa fa-map-o"></i> {{ button_map }}</a>{% endif %}
+        </div>
+      </div>
+      <div class="vm-box vm-contact-card">
+        <span class="vm-cc-ico"><i class="fa fa-phone"></i></span>
+        <div>
+          <div class="vm-cc-label">{{ text_telephone }}</div>
+          <a class="vm-cc-phone" href="{{ vm.phone_href }}">{{ telephone }}</a>
+          {% if vm.phone2 %}<a class="vm-cc-phone" href="{{ vm.phone2_href }}">{{ vm.phone2 }}</a>{% endif %}
+          {% if fax %}<div class="text-muted">{{ text_fax }} {{ fax }}</div>{% endif %}
+          <div class="vm-help-btns">
+            {% if vm.viber %}<a href="{{ vm.viber }}" class="vm-help-btn vm-help-viber"><i class="fa fa-phone"></i> Viber</a>{% endif %}
+            {% if vm.telegram %}<a href="{{ vm.telegram }}" class="vm-help-btn vm-help-tg" target="_blank" rel="noopener"><i class="fa fa-paper-plane"></i> Telegram</a>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% if open %}
+      <div class="vm-box vm-contact-card">
+        <span class="vm-cc-ico"><i class="fa fa-clock-o"></i></span>
+        <div>
+          <div class="vm-cc-label">{{ text_open }}</div>
+          <div class="vm-cc-open">{{ open }}</div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% if comment %}<div class="vm-box vm-contact-comment">{{ comment }}</div>{% endif %}
+    {% if locations %}
+    <h2 class="vm-h2">{{ text_store }}</h2>
+    <div class="vm-contact-cards">
+      {% for location in locations %}
+      <div class="vm-box vm-contact-card">
+        <span class="vm-cc-ico"><i class="fa fa-map-marker"></i></span>
+        <div><b>{{ location.name }}</b><address>{{ location.address }}</address>
+          {% if location.telephone %}<div>{{ location.telephone }}</div>{% endif %}
+          {% if location.open %}<div class="vm-cc-open">{{ location.open }}</div>{% endif %}
+          {% if location.geocode %}<a href="https://maps.google.com/maps?q={{ location.geocode|url_encode }}&hl={{ geocode_hl }}&t=m&z=15" target="_blank" rel="noopener" class="vm-cc-link"><i class="fa fa-map-o"></i> {{ button_map }}</a>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="vm-box vm-contact-form">
+      <h2>{{ text_contact }}</h2>
+      <form action="{{ action }}" method="post" enctype="multipart/form-data">
+        <div class="vm-form-row">
+          <div class="form-group required">
+            <label class="control-label" for="input-name">{{ entry_name }}</label>
+            <input type="text" name="name" value="{{ name }}" id="input-name" class="form-control" />
+            {% if error_name %}<div class="text-danger">{{ error_name }}</div>{% endif %}
+          </div>
+          <div class="form-group required">
+            <label class="control-label" for="input-email">{{ entry_email }}</label>
+            <input type="text" name="email" value="{{ email }}" id="input-email" class="form-control" />
+            {% if error_email %}<div class="text-danger">{{ error_email }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="form-group required">
+          <label class="control-label" for="input-enquiry">{{ entry_enquiry }}</label>
+          <textarea name="enquiry" rows="6" id="input-enquiry" class="form-control">{{ enquiry }}</textarea>
+          {% if error_enquiry %}<div class="text-danger">{{ error_enquiry }}</div>{% endif %}
+        </div>
+        {{ captcha }}
+        <button type="submit" class="vm-buy vm-submit">{{ button_submit }}</button>
+      </form>
+    </div>
+    {{ content_bottom }}
+  </div>
+</div>
+{{ footer }}
