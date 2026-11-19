@@ -90,6 +90,13 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$data['backups'] = $this->model_extension_module_vm_theme->getBackups();
 		// relative URLs: work whatever HTTP(S)_SERVER says in admin/config.php (avoids blocked mixed-content requests)
 		$data['check_url'] = 'index.php?route=' . $this->route . '/checkUpdate&user_token=' . $this->session->data['user_token'];
+		$data['categories_action'] = $this->link('categories');
+		$data['cat_preset'] = $this->model_extension_module_vm_theme->categoryPreset();
+		$data['cat_preset_total'] = 0;
+
+		foreach ($data['cat_preset'] as $root) {
+			$data['cat_preset_total'] += 1 + count($root['children']);
+		}
 		$data['update_url'] = 'index.php?route=' . $this->route . '/update&user_token=' . $this->session->data['user_token'];
 		$data['upload_action'] = $this->link('upload');
 		$data['rollback'] = $this->link('rollback');
@@ -366,6 +373,28 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				$this->session->data['vm_theme_error'] = $this->errorText($res['error']);
 			} else {
 				$this->session->data['success'] = sprintf($this->language->get('text_upd_rolled'), $res['version']);
+			}
+		}
+
+		$this->response->redirect($this->link());
+	}
+
+	// Creates the TTO-style category tree (data/categories.json of the theme)
+	public function categories() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->user->hasPermission('modify', 'catalog/category') || !$this->user->hasPermission('modify', $this->route)) {
+			$this->session->data['vm_theme_error'] = $this->language->get('error_permission');
+		} elseif ($this->request->server['REQUEST_METHOD'] !== 'POST') {
+			$this->session->data['vm_theme_error'] = $this->language->get('error_permission');
+		} else {
+			$res = $this->model_extension_module_vm_theme->createCategories();
+
+			if (isset($res['error'])) {
+				$this->session->data['vm_theme_error'] = $this->language->get('text_cat_error');
+			} else {
+				$this->session->data['success'] = sprintf($this->language->get('text_cat_done'), $res['created'], $res['existing'], $res['moved']);
 			}
 		}
 

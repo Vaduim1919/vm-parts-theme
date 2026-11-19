@@ -53,6 +53,21 @@
     </div>
 
     <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-sitemap"></i> {{ text_cat_title }}</h3></div>
+      <div class="panel-body">
+        <p>{{ text_cat_help|format(cat_preset|length, cat_preset_total) }}</p>
+        <details style="margin-bottom:12px"><summary style="cursor:pointer">{{ text_cat_preview }}</summary>
+          <div style="columns:3;column-gap:24px;margin-top:10px;font-size:12px">
+          {% for root in cat_preset %}<div style="break-inside:avoid;margin-bottom:10px"><b>{{ root.name }}</b> <span class="text-muted">({{ root.children|length }})</span><br>{{ root.children|join(', ') }}</div>{% endfor %}
+          </div>
+        </details>
+        <form action="{{ categories_action }}" method="post" style="display:inline">
+          <button type="submit" class="btn btn-primary" onclick="return confirm('{{ text_cat_confirm|e('js') }}');"><i class="fa fa-plus"></i> {{ button_cat_create }}</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel panel-default">
       <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-pencil"></i> {{ text_edit }}</h3></div>
       <div class="panel-body">
         <form action="{{ action }}" method="post" enctype="multipart/form-data" id="form-vm-theme" class="form-horizontal">

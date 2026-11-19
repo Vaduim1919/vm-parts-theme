@@ -452,3 +452,10 @@ html.vm-noscroll,html.vm-noscroll body{overflow:hidden}
   .vm-footer-social{padding-bottom:16px}
   .vm-footer-bottom .vm-row{flex-direction:column;align-items:flex-start}
 }
+
+/* 1.1.6: big category sections */
+@media (min-width:768px){
+  .vm-flyout{width:min(820px,calc(100vw - 340px));max-height:75vh;overflow-y:auto}
+  .vm-flyout ul{columns:3;column-gap:22px}
+  .vm-flyout li{font-size:13.5px;padding:3px 0}
+}
