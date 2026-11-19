@@ -26,7 +26,10 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			'module_vm_catalog_update_url' => self::DEFAULT_UPDATE_URL,
 			'module_vm_catalog_utr_email'  => '',
 			'module_vm_catalog_utr_password' => '',
-			'module_vm_catalog_bm_token'   => ''
+			'module_vm_catalog_bm_token'   => '',
+			'module_vm_catalog_bm_photos'  => 'local',
+			'module_vm_catalog_cron_key'   => '',
+			'module_vm_catalog_admin_dir'  => ''
 		);
 	}
 
@@ -39,6 +42,12 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		}
 
 		return $out;
+	}
+
+	private function cronKey() {
+		$k = (string)$this->config->get('module_vm_catalog_cron_key');
+
+		return strlen($k) >= 24 ? $k : bin2hex(function_exists('random_bytes') ? random_bytes(16) : md5(uniqid('', true), true));
 	}
 
 	private function canModify() {
@@ -90,6 +99,21 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		$data['bm_token_set'] = (string)$this->config->get('module_vm_catalog_bm_token') !== '';
 		$data['module_vm_catalog_bm_token'] = '';
 		$data['bm_probe_url'] = $this->ajaxUrl('bmProbe');
+		$data['enrich_url'] = $this->ajaxUrl('enrich');
+		$data['enrich_stats'] = $this->model_extension_module_vm_catalog->enricher()->stats();
+		$data['enrich_sample'] = $this->model_extension_module_vm_catalog->enricher()->sample();
+
+		// cron needs the key and the (possibly renamed) admin folder in settings
+		if (strlen((string)$this->config->get('module_vm_catalog_cron_key')) < 24 || (string)$this->config->get('module_vm_catalog_admin_dir') !== DIR_APPLICATION) {
+			$this->load->model('setting/setting');
+			$this->model_setting_setting->editSetting('module_vm_catalog', $this->cleanOptions($this->settings()));
+			$data['module_vm_catalog_cron_key'] = $this->config->get('module_vm_catalog_cron_key');
+			$saved = $this->model_setting_setting->getSetting('module_vm_catalog');
+			$data['module_vm_catalog_cron_key'] = isset($saved['module_vm_catalog_cron_key']) ? $saved['module_vm_catalog_cron_key'] : '';
+		}
+
+		$data['cron_url'] = (defined('HTTPS_CATALOG') ? HTTPS_CATALOG : HTTP_CATALOG) . 'index.php?route=extension/module/vm_catalog_cron&key=' . $data['module_vm_catalog_cron_key'];
+		$data['cron_installed'] = is_file(DIR_CATALOG . 'controller/extension/module/vm_catalog_cron.php');
 		$data['utr_probe_url'] = $this->ajaxUrl('utrProbe');
 		$data['utr_price_url'] = $this->ajaxUrl('utrPrice');
 		$data['upload_url'] = $this->ajaxUrl('upload');
@@ -131,7 +155,11 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			'module_vm_catalog_utr_email'  => isset($src['module_vm_catalog_utr_email']) ? mb_substr($get('module_vm_catalog_utr_email'), 0, 128) : (string)$this->config->get('module_vm_catalog_utr_email'),
 			// empty password field = keep the saved one
 			'module_vm_catalog_utr_password' => !empty($src['module_vm_catalog_utr_password']) ? $get('module_vm_catalog_utr_password') : (string)$this->config->get('module_vm_catalog_utr_password'),
-			'module_vm_catalog_bm_token'   => !empty($src['module_vm_catalog_bm_token']) ? trim($get('module_vm_catalog_bm_token')) : (string)$this->config->get('module_vm_catalog_bm_token')
+			'module_vm_catalog_bm_token'   => !empty($src['module_vm_catalog_bm_token']) ? trim($get('module_vm_catalog_bm_token')) : (string)$this->config->get('module_vm_catalog_bm_token'),
+			'module_vm_catalog_bm_photos'  => isset($src['module_vm_catalog_bm_photos']) && in_array($src['module_vm_catalog_bm_photos'], array('none', 'local', 'all'), true) ? $src['module_vm_catalog_bm_photos'] : ((string)$this->config->get('module_vm_catalog_bm_photos') ?: 'local'),
+			'module_vm_catalog_cron_key'   => $this->cronKey(),
+			'module_vm_catalog_admin_dir'  => DIR_APPLICATION,
+			'module_vm_catalog_bm_img_pattern' => (string)$this->config->get('module_vm_catalog_bm_img_pattern')
 		);
 	}
 
@@ -166,6 +194,20 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		}
 
 		$this->response->redirect($this->link());
+	}
+
+	// one batch of BM enrichment (the admin page calls it in a loop)
+	public function enrich() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify() || !$this->user->hasPermission('modify', 'catalog/product')) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$e = $this->model_extension_module_vm_catalog->enricher();
+		$run = $e->run(40, 400);
+		$this->json(array('run' => $run, 'stats' => $e->stats()));
 	}
 
 	public function bmProbe() {

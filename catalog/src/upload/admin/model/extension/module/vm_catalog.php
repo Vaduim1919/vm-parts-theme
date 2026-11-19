@@ -44,12 +44,25 @@ class ModelExtensionModuleVmCatalog extends Model {
 			KEY `art_key` (`art_key`)
 		) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4");
 
+		$this->enricher()->install();
+
 		// lookups of existing products by article
 		$idx = $this->db->query("SHOW INDEX FROM `" . DB_PREFIX . "product` WHERE Key_name = 'vm_model'");
 
 		if (!$idx->num_rows) {
 			$this->db->query("ALTER TABLE `" . DB_PREFIX . "product` ADD INDEX `vm_model` (`model`)");
 		}
+	}
+
+	public function enricher() {
+		static $e = null;
+
+		if ($e === null) {
+			require_once self::dataDir() . 'enricher.php';
+			$e = new VmCatalogEnricher($this->registry);
+		}
+
+		return $e;
 	}
 
 	public function stats() {

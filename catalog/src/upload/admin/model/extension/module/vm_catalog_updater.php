@@ -118,7 +118,10 @@ class ModelExtensionModuleVmCatalogUpdater extends Model {
 			'#^admin/model/extension/module/vm_catalog(_updater)?\.php$#',
 			'#^admin/model/extension/module/vm_catalog_data/[A-Za-z0-9_\-.]+$#',
 			'#^admin/language/[a-z]{2}-[a-z]{2}/extension/module/vm_catalog\.php$#',
-			'#^admin/view/template/extension/module/vm_catalog\.twig$#'
+			'#^admin/view/template/extension/module/vm_catalog\.twig$#',
+			'#^catalog/controller/extension/module/vm_catalog(_[a-z]+)?\.php$#',
+			'#^catalog/model/extension/module/vm_catalog(_[a-z]+)?\.php$#',
+			'#^catalog/language/[a-z]{2}-[a-z]{2}/extension/module/vm_catalog(_[a-z]+)?\.php$#'
 		);
 
 
