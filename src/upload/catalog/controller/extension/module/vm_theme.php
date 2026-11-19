@@ -13,6 +13,49 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		return '';
 	}
 
+	// Page opened over http while the shop's base URL is https: cart/wishlist AJAX
+	// would go cross-origin and be blocked by the browser. Send visitors to https.
+	private function forceHttps() {
+		if ($this->config->get('module_vm_theme_force_https') === '0') {
+			return;
+		}
+
+		$ssl = (string)$this->config->get('config_ssl');
+
+		if (strpos($ssl, 'https://') !== 0 || $this->isSecure() || headers_sent()) {
+			return;
+		}
+
+		$method = isset($this->request->server['REQUEST_METHOD']) ? $this->request->server['REQUEST_METHOD'] : 'GET';
+
+		if ($method !== 'GET' && $method !== 'HEAD') {
+			return;
+		}
+
+		$host = parse_url($ssl, PHP_URL_HOST);
+		$port = parse_url($ssl, PHP_URL_PORT);
+		$host .= $port ? ':' . $port : '';
+		// request->server is HTML-escaped by OpenCart
+		$uri = isset($this->request->server['REQUEST_URI']) ? html_entity_decode($this->request->server['REQUEST_URI'], ENT_QUOTES, 'UTF-8') : '/';
+
+		if (!parse_url($ssl, PHP_URL_HOST) || preg_match('/[\r\n]/', $uri)) {
+			return;
+		}
+
+		header('Location: https://' . $host . $uri, true, 301);
+		exit;
+	}
+
+	private function isSecure() {
+		$s = $this->request->server;
+
+		return (!empty($s['HTTPS']) && strtolower($s['HTTPS']) !== 'off')
+			|| (isset($s['SERVER_PORT']) && (int)$s['SERVER_PORT'] === 443)
+			|| (!empty($s['HTTP_X_FORWARDED_PROTO']) && strtolower($s['HTTP_X_FORWARDED_PROTO']) === 'https')
+			|| (!empty($s['HTTP_X_FORWARDED_SSL']) && strtolower($s['HTTP_X_FORWARDED_SSL']) === 'on')
+			|| (!empty($s['HTTP_CF_VISITOR']) && strpos($s['HTTP_CF_VISITOR'], 'https') !== false);
+	}
+
 	private function cartCount() {
 		$count = (int)$this->cart->countProducts();
 
@@ -61,6 +104,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		switch ($route) {
 			case 'common/header':
+				$this->forceHttps();
 				$data['vm_home'] = $this->url->link('common/home');
 				$data['vm_cart_link'] = $this->url->link('checkout/cart');
 				$data['vm_cart_count'] = $this->cartCount();
