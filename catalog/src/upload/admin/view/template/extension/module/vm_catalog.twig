@@ -43,6 +43,7 @@
           <tr><th>{{ text_en_checked }}</th><th>{{ text_en_found }}</th><th>{{ text_en_notfound }}</th><th>{{ text_en_errors }}</th><th>{{ text_en_cars }}</th><th>{{ text_en_analogs }}</th><th>{{ text_en_photos }}</th></tr>
           <tr><td data-k="checked_total">{{ enrich_stats.checked }} / {{ enrich_stats.total }}</td><td data-k="found">{{ enrich_stats.found }}</td><td data-k="notfound">{{ enrich_stats.notfound }}</td><td data-k="errors">{{ enrich_stats.errors }}</td><td data-k="cars">{{ enrich_stats.with_cars }} <small class="text-muted">({{ enrich_stats.models }} {{ text_en_models }})</small></td><td data-k="with_analogs">{{ enrich_stats.with_analogs }}</td><td data-k="images">{{ enrich_stats.images }}</td></tr>
         </table>
+        <div id="vm-img-error" class="alert alert-warning" style="max-width:1000px;word-break:break-all{% if not enrich_stats.img_error %};display:none{% endif %}"><b>{{ text_img_error }}</b> <span>{{ enrich_stats.img_error }}</span></div>
         <p>
           <button type="button" id="vm-enrich-go" class="btn btn-success"><i class="fa fa-play"></i> {{ button_enrich_go }}</button>
           <button type="button" id="vm-enrich-stop" class="btn btn-default" style="display:none"><i class="fa fa-stop"></i> {{ button_enrich_stop }}</button>
@@ -224,6 +225,7 @@
     t.find('[data-k=found]').text(st.found); t.find('[data-k=notfound]').text(st.notfound); t.find('[data-k=errors]').text(st.errors);
     t.find('[data-k=cars]').html(st.with_cars + ' <small class="text-muted">(' + st.models + ' {{ text_en_models|e('js') }})</small>');
     t.find('[data-k=with_analogs]').text(st.with_analogs); t.find('[data-k=images]').text(st.images);
+    $('#vm-img-error').toggle(!!st.img_error).find('span').text(st.img_error || '');
   }
   function enrichStep() {
     if (!enrichOn) { return; }

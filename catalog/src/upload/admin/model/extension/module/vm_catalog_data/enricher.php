@@ -170,29 +170,46 @@ class VmCatalogEnricher {
 		return array('code' => $code, 'json' => json_decode($res, true));
 	}
 
+	public $imgError = '';
+
 	private function download($url, $file) {
+		$fh = @fopen($file . '.tmp', 'w');
+
+		if (!$fh) {
+			$this->imgError = 'немає прав на запис у ' . dirname($file);
+
+			return false;
+		}
+
 		$ch = curl_init($url);
-		$fh = fopen($file . '.tmp', 'w');
 		curl_setopt_array($ch, array(
 			CURLOPT_FILE           => $fh,
 			CURLOPT_FOLLOWLOCATION => true,
 			CURLOPT_MAXREDIRS      => 3,
 			CURLOPT_CONNECTTIMEOUT => 10,
 			CURLOPT_TIMEOUT        => 30,
-			CURLOPT_USERAGENT      => 'VM-Catalog vmautoparts.com.ua'
+			CURLOPT_SSL_VERIFYPEER => true,
+			// the photo CDN refuses requests that do not look like a browser
+			CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36',
+			CURLOPT_HTTPHEADER     => array('Accept: image/avif,image/webp,image/*,*/*;q=0.8', 'Referer: https://b2b.bm.parts/')
 		));
 		curl_exec($ch);
 		$code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		$type = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+		$err = curl_error($ch);
 		curl_close($ch);
 		fclose($fh);
 
-		if ($code == 200 && stripos($type, 'image/') === 0 && filesize($file . '.tmp') > 500 && @getimagesize($file . '.tmp')) {
+		$size = (int)@filesize($file . '.tmp');
+
+		if ($code == 200 && $size > 500 && @getimagesize($file . '.tmp')) {
 			rename($file . '.tmp', $file);
+			$this->imgError = '';
 
 			return true;
 		}
 
+		$this->imgError = $url . ' → ' . ($err ? $err : 'HTTP ' . $code . ', ' . ($type ?: 'без типу') . ', ' . $size . ' байт');
 		@unlink($file . '.tmp');
 
 		return false;
@@ -448,6 +465,12 @@ class VmCatalogEnricher {
 			@mkdir(DIR_IMAGE . $sub, 0755, true);
 		}
 
+		if (!is_dir(DIR_IMAGE . $sub) || !is_writable(DIR_IMAGE . $sub)) {
+			$this->saveSetting('bm_img_error', 'немає прав на запис у папку image/' . $sub);
+
+			return -1;
+		}
+
 		foreach ($this->imageUrls($paths[0]) as $i => $url) {
 			$ext = strtolower(pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION));
 			$ext = in_array($ext, array('jpg', 'jpeg', 'png', 'webp', 'gif'), true) ? $ext : 'jpg';
@@ -460,11 +483,48 @@ class VmCatalogEnricher {
 
 				$this->db->query("UPDATE `" . DB_PREFIX . "product` SET image = '" . $this->db->escape($rel) . "' WHERE product_id = '" . (int)$product_id . "'");
 
+				if ((string)$this->setting('bm_img_error') !== '') {
+					$this->saveSetting('bm_img_error', '');
+				}
+
 				return 1;
 			}
 		}
 
-		return 0;
+		$this->saveSetting('bm_img_error', date('d.m H:i') . ' ' . $this->imgError);
+
+		return -1;
+	}
+
+	// photos for products found earlier that still have none (e.g. after a failed download)
+	private function backfillPhotos($limit, &$stats) {
+		$mode = $this->setting('bm_photos', 'local');
+
+		if ($mode === 'none') {
+			return;
+		}
+
+		$q = $this->db->query("SELECT e.product_id, e.ext_id, MAX(i.local_qty) AS local_qty FROM `" . DB_PREFIX . "vm_catalog_enrich` e
+			JOIN `" . DB_PREFIX . "product` p ON (p.product_id = e.product_id AND p.image = '')
+			JOIN `" . DB_PREFIX . "vm_catalog_item` i ON (i.product_id = e.product_id)
+			WHERE e.status = 1 AND e.images = 0 AND e.ext_id <> ''" . ($mode === 'local' ? " AND i.local_qty > 0" : "") . "
+			GROUP BY e.product_id LIMIT " . (int)$limit);
+
+		foreach ($q->rows as $row) {
+			$r = $this->bm('GET', 'product/' . rawurlencode($row['ext_id']) . '/images');
+
+			if ($r['code'] == 429) {
+				return;
+			}
+
+			$imgs = isset($r['json']['images']) ? $r['json']['images'] : array();
+			$got = $imgs ? $this->saveImage($row['product_id'], $imgs) : -1;
+			$this->db->query("UPDATE `" . DB_PREFIX . "vm_catalog_enrich` SET images = '" . (int)$got . "' WHERE product_id = '" . (int)$row['product_id'] . "'");
+
+			if ($got > 0) {
+				$stats['photos'] = (isset($stats['photos']) ? $stats['photos'] : 0) + 1;
+			}
+		}
 	}
 
 	public function saveBm($product_id, $uuid, $local_qty) {
@@ -533,6 +593,8 @@ class VmCatalogEnricher {
 		@touch($lock);
 		@set_time_limit($seconds + 60);
 
+		$this->backfillPhotos(40, $stats);
+
 		while (microtime(true) - $start < $seconds && $this->requests < $max_requests) {
 			$q = $this->db->query("SELECT i.product_id, i.article, i.brand, MAX(i.local_qty) AS local_qty
 				FROM `" . DB_PREFIX . "vm_catalog_item` i
@@ -598,7 +660,7 @@ class VmCatalogEnricher {
 
 	public function stats() {
 		$p = DB_PREFIX;
-		$r = $this->db->query("SELECT COUNT(*) AS checked, SUM(status = 1) AS found, SUM(status = 0) AS notfound, SUM(status = 2) AS errors, SUM(images) AS images, SUM(cars > 0) AS with_cars, SUM(analogs > 0) AS with_analogs FROM `{$p}vm_catalog_enrich`")->row;
+		$r = $this->db->query("SELECT COUNT(*) AS checked, SUM(status = 1) AS found, SUM(status = 0) AS notfound, SUM(status = 2) AS errors, SUM(images > 0) AS images, SUM(images < 0) AS img_failed, SUM(cars > 0) AS with_cars, SUM(analogs > 0) AS with_analogs FROM `{$p}vm_catalog_enrich`")->row;
 		$total = (int)$this->db->query("SELECT COUNT(DISTINCT product_id) AS n FROM `{$p}vm_catalog_item` WHERE local_qty > 0 OR remote_qty > 0")->row['n'];
 		$r['total'] = $total;
 		$r['links'] = (int)$this->db->query("SELECT COUNT(*) AS n FROM `{$p}vm_product_vehicle` WHERE source = 'bm'")->row['n'];
@@ -607,6 +669,8 @@ class VmCatalogEnricher {
 		foreach ($r as $k => $v) {
 			$r[$k] = (int)$v;
 		}
+
+		$r['img_error'] = (string)$this->setting('bm_img_error');
 
 		return $r;
 	}
