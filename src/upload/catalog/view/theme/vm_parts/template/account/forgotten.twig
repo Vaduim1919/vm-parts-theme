@@ -1,0 +1,25 @@
+{{ header }}
+<div id="account-forgotten" class="container vm-auth">
+  <ul class="breadcrumb">
+    {% for breadcrumb in breadcrumbs %}
+    <li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>
+    {% endfor %}
+  </ul>
+  {{ content_top }}
+  <div class="vm-auth-card vm-auth-single">
+    <div class="vm-auth-icon"><i class="fa fa-key"></i></div>
+    <h1>{{ heading_title }}</h1>
+    <p class="vm-auth-lead">{{ text_email }}</p>
+    {% if error_warning %}<div class="alert alert-danger"><i class="fa fa-exclamation-circle"></i> {{ error_warning }}</div>{% endif %}
+    <form action="{{ action }}" method="post" enctype="multipart/form-data" class="vm-auth-form">
+      <div class="form-group">
+        <label class="control-label" for="input-email">{{ entry_email }}</label>
+        <div class="vm-auth-input"><i class="fa fa-envelope-o"></i><input type="email" name="email" value="{{ email }}" placeholder="name@gmail.com" id="input-email" class="form-control" autocomplete="email" required /></div>
+      </div>
+      <button type="submit" class="vm-auth-submit">{{ button_continue }}</button>
+      <a href="{{ back }}" class="vm-auth-back"><i class="fa fa-angle-left"></i> {{ button_back }}</a>
+    </form>
+  </div>
+  {{ content_bottom }}
+</div>
+{{ footer }}

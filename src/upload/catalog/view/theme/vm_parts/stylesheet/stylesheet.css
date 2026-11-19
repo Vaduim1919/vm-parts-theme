@@ -601,3 +601,63 @@ html.vm-noscroll,html.vm-noscroll body{overflow:hidden}
 .vm .simple-content #simplecheckout_comment textarea{min-height:90px}
 .vm .simple-content .simplecheckout-cart-total .inputs .form-control{margin:0!important}
 @media (max-width:767px){.vm .simple-content #simplecheckout_comment .simplecheckout-block-content{padding:14px!important}}
+
+/* ================= 1.1.10: login / register / forgotten ================= */
+.vm-r-account-simpleregister #column-left,.vm-r-account-simpleregister #column-right,
+.vm-r-account-register #column-left,.vm-r-account-register #column-right{display:none}
+.vm-r-account-simpleregister #content,.vm-r-account-register #content{width:100%;float:none}
+.vm-auth{padding-bottom:30px}
+.vm-auth-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:20px;max-width:980px;margin:0 auto}
+.vm-auth-card{background:#fff;border:1px solid var(--vm-line);border-radius:14px;padding:30px 32px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.vm-auth-card h1,.vm-auth-card h2{font-size:26px;font-weight:900;margin:0 0 6px;color:var(--vm-text)}
+.vm-auth-card h2{font-size:21px}
+.vm-auth-lead{color:var(--vm-muted);margin:0 0 20px}
+.vm-auth-form .form-group{margin-bottom:16px}
+.vm-auth-form .control-label{font-weight:500;margin-bottom:6px;display:block}
+.vm-auth-label-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.vm-auth-label-row a{font-size:13px}
+.vm-auth-input{position:relative}
+.vm-auth-input>i{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#9aa4b2;font-size:16px;pointer-events:none}
+.vm-auth-input .form-control{height:48px;padding-left:42px;border:1px solid var(--vm-line2);border-radius:10px;font-size:15px;box-shadow:none}
+.vm-auth-input .form-control:focus{border-color:var(--vm-blue);box-shadow:0 0 0 3px rgba(43,119,181,.15)}
+.vm-auth-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:38px;height:38px;border:0;background:none;color:#9aa4b2;border-radius:8px}
+.vm-auth-eye:hover{color:var(--vm-blue);background:var(--vm-bg)}
+.vm-auth-input input[type=password],.vm-auth-input input[name=password]{padding-right:48px}
+.vm-auth-submit{display:block;width:100%;height:52px;margin-top:6px;border:0;border-radius:12px;background:var(--vm-green);color:#fff;font-size:17px;font-weight:700;box-shadow:0 6px 16px rgba(34,163,90,.25)}
+.vm-auth-submit:hover{background:var(--vm-green-dark)}
+.vm-auth-side{background:linear-gradient(160deg,#f4f9fd,#fff 60%)}
+.vm-auth-benefits{list-style:none;padding:0;margin:0 0 22px}
+.vm-auth-benefits li{display:flex;align-items:center;gap:12px;padding:8px 0;font-weight:500}
+.vm-auth-benefits i{flex:0 0 36px;height:36px;border-radius:50%;background:var(--vm-blue-soft);color:var(--vm-blue);display:flex;align-items:center;justify-content:center;font-size:16px}
+.vm-auth-secondary{display:flex;align-items:center;justify-content:center;height:50px;border:2px solid var(--vm-blue);border-radius:12px;color:var(--vm-blue)!important;font-weight:700;font-size:16px;text-decoration:none!important}
+.vm-auth-secondary:hover{background:var(--vm-blue);color:#fff!important}
+.vm-auth-note{color:var(--vm-muted);font-size:13px;margin:12px 0 0;text-align:center}
+.vm-auth-single{max-width:480px;margin:0 auto;text-align:left}
+.vm-auth-icon{width:56px;height:56px;border-radius:50%;background:var(--vm-blue-soft);color:var(--vm-blue);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:14px}
+.vm-auth-back{display:inline-flex;align-items:center;gap:6px;margin-top:14px;color:var(--vm-muted)!important}
+.vm-auth .alert{border-radius:10px}
+
+/* Simple registration */
+.vm-r-account-simpleregister #content>h1{font-size:26px;font-weight:900;text-align:center;margin:6px 0 16px}
+.vm .simple-content #simplepage_form{max-width:600px;margin:0 auto}
+.vm .simple-content .simpleregister{background:#fff;border:1px solid var(--vm-line);border-radius:14px;padding:26px 30px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.vm .simple-content .simpleregister-have-account{color:var(--vm-muted);text-align:center;margin:0 0 18px}
+.vm .simple-content .simpleregister-block-content{padding:0;margin:0}
+.vm .simple-content .simpleregister .form-group{margin:0 0 14px}
+.vm .simple-content .simpleregister .control-label{width:100%;float:none;text-align:left;padding:0 0 6px;font-weight:500}
+.vm .simple-content .simpleregister .form-group>div[class*=col-sm-]{width:100%;float:none}
+.vm .simple-content .simpleregister .form-group legend,.vm .simple-content .simpleregister h3{font-size:16px;font-weight:700;border:0;margin:10px 0 8px}
+.vm .simple-content .simpleregister-button-block{display:block;background:none;padding:6px 0 0;margin:0;text-align:left;overflow:visible}
+.vm .simple-content .simpleregister-button-right{float:none;text-align:left}
+.vm .simple-content #agreement_checkbox{display:block;margin-bottom:12px}
+.vm .simple-content #simpleregister_button_confirm{display:flex;align-items:center;justify-content:center;width:100%;height:52px;border:0;border-radius:12px;background:var(--vm-green);color:#fff;font-size:17px;font-weight:700;box-shadow:0 6px 16px rgba(34,163,90,.25)}
+.vm .simple-content #simpleregister_button_confirm:hover{background:var(--vm-green-dark)}
+
+@media (max-width:767px){
+  .vm-auth-grid{grid-template-columns:1fr;gap:14px}
+  .vm-auth-card{padding:22px 18px}
+  .vm-auth-card h1{font-size:22px}
+  .vm .simple-content .simpleregister{padding:20px 16px}
+}
+.vm .simple-content .simpleregister .form-group{margin-left:0;margin-right:0}
+.vm .simple-content .simpleregister .form-group>div[class*=col-sm-],.vm .simple-content .simpleregister .control-label{padding-left:0;padding-right:0}
