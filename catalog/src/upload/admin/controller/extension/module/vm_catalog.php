@@ -29,7 +29,7 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			'module_vm_catalog_utr_email'  => '',
 			'module_vm_catalog_utr_password' => '',
 			'module_vm_catalog_bm_token'   => '',
-			'module_vm_catalog_bm_photos'  => 'local',
+			'module_vm_catalog_bm_photos'  => 'all',
 			'module_vm_catalog_cron_key'   => '',
 			'module_vm_catalog_admin_dir'  => ''
 		);
@@ -63,6 +63,14 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 
 		// tables appear on install; also on the first open after a module update
 		$this->model_extension_module_vm_catalog->install();
+
+		if (!$this->config->get('module_vm_catalog_photos_v2')) {
+			// 1.3.5: photos for products from every warehouse (owner's request)
+			$this->load->model('setting/setting');
+			$this->model_setting_setting->editSetting('module_vm_catalog', $this->cleanOptions(array_merge($this->settings(), array('module_vm_catalog_bm_photos' => 'all'))));
+			$this->db->query("UPDATE `" . DB_PREFIX . "vm_catalog_enrich` SET images = 0 WHERE images < 0");
+			$this->response->redirect($this->link());
+		}
 
 		if ((string)$this->config->get('module_vm_catalog_site_local') === '') {
 			// 1.3.1: on-order delivery is 1 day; switch products already imported with the old 2-day status
@@ -169,7 +177,8 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			// empty password field = keep the saved one
 			'module_vm_catalog_utr_password' => !empty($src['module_vm_catalog_utr_password']) ? $get('module_vm_catalog_utr_password') : (string)$this->config->get('module_vm_catalog_utr_password'),
 			'module_vm_catalog_bm_token'   => !empty($src['module_vm_catalog_bm_token']) ? trim($get('module_vm_catalog_bm_token')) : (string)$this->config->get('module_vm_catalog_bm_token'),
-			'module_vm_catalog_bm_photos'  => isset($src['module_vm_catalog_bm_photos']) && in_array($src['module_vm_catalog_bm_photos'], array('none', 'local', 'all'), true) ? $src['module_vm_catalog_bm_photos'] : ((string)$this->config->get('module_vm_catalog_bm_photos') ?: 'local'),
+			'module_vm_catalog_bm_photos'  => isset($src['module_vm_catalog_bm_photos']) && in_array($src['module_vm_catalog_bm_photos'], array('none', 'local', 'all'), true) ? $src['module_vm_catalog_bm_photos'] : ((string)$this->config->get('module_vm_catalog_bm_photos') ?: 'all'),
+			'module_vm_catalog_photos_v2'  => 1,
 			'module_vm_catalog_cron_key'   => $this->cronKey(),
 			'module_vm_catalog_admin_dir'  => DIR_APPLICATION,
 			'module_vm_catalog_bm_img_pattern' => (string)$this->config->get('module_vm_catalog_bm_img_pattern')

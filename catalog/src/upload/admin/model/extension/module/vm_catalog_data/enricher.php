@@ -203,6 +203,7 @@ class VmCatalogEnricher {
 		$size = (int)@filesize($file . '.tmp');
 
 		if ($code == 200 && $size > 500 && @getimagesize($file . '.tmp')) {
+			$this->shrink($file . '.tmp');
 			rename($file . '.tmp', $file);
 			$this->imgError = '';
 
@@ -213,6 +214,44 @@ class VmCatalogEnricher {
 		@unlink($file . '.tmp');
 
 		return false;
+	}
+
+	// big supplier photos -> max 800 px, JPEG quality 82 (keeps the hosting disk small)
+	private function shrink($file) {
+		if (!function_exists('imagecreatefromstring') || filesize($file) < 70000) {
+			return;
+		}
+
+		$info = @getimagesize($file);
+
+		if (!$info || $info[0] * $info[1] > 25000000) {
+			return;
+		}
+
+		$src = @imagecreatefromstring(file_get_contents($file));
+
+		if (!$src) {
+			return;
+		}
+
+		$w = imagesx($src);
+		$h = imagesy($src);
+		$k = min(1, 800 / max($w, $h));
+		$nw = max(1, (int)round($w * $k));
+		$nh = max(1, (int)round($h * $k));
+		$dst = imagecreatetruecolor($nw, $nh);
+		imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255)); // transparent PNG -> white
+		imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
+		$tmp = $file . '.jpg';
+
+		if (@imagejpeg($dst, $tmp, 82) && filesize($tmp) < filesize($file)) {
+			rename($tmp, $file);
+		} else {
+			@unlink($tmp);
+		}
+
+		imagedestroy($src);
+		imagedestroy($dst);
 	}
 
 	// ------------------------------------------------------------ finding the product in BM
@@ -473,7 +512,7 @@ class VmCatalogEnricher {
 
 		foreach ($this->imageUrls($paths[0]) as $i => $url) {
 			$ext = strtolower(pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION));
-			$ext = in_array($ext, array('jpg', 'jpeg', 'png', 'webp', 'gif'), true) ? $ext : 'jpg';
+			$ext = function_exists('imagecreatefromstring') ? 'jpg' : (in_array($ext, array('jpg', 'jpeg', 'png', 'webp', 'gif'), true) ? $ext : 'jpg');
 			$rel = $sub . (int)$product_id . '.' . $ext;
 
 			if ($this->download($url, DIR_IMAGE . $rel)) {
@@ -498,7 +537,7 @@ class VmCatalogEnricher {
 
 	// photos for products found earlier that still have none (e.g. after a failed download)
 	private function backfillPhotos($limit, &$stats) {
-		$mode = $this->setting('bm_photos', 'local');
+		$mode = $this->setting('bm_photos', 'all');
 
 		if ($mode === 'none') {
 			return;
@@ -548,7 +587,7 @@ class VmCatalogEnricher {
 			'cars_json' => json_encode(isset($p['cars']) ? $p['cars'] : array(), JSON_UNESCAPED_UNICODE)
 		);
 
-		$mode = $this->setting('bm_photos', 'local');
+		$mode = $this->setting('bm_photos', 'all');
 
 		if ($mode === 'all' || ($mode === 'local' && $local_qty > 0)) {
 			$imgs = !empty($p['images']) ? $p['images'] : (!empty($p['default_image']) ? array($p['default_image']) : array());
