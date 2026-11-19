@@ -793,7 +793,21 @@ class ModelExtensionModuleVmCatalog extends Model {
 	// products of this supplier that are no longer in the price list: hide
 	private function finish(&$job) {
 		$supplier = $this->db->escape($job['opt']['supplier']);
-		$old = $this->db->query("SELECT product_id FROM `" . DB_PREFIX . "vm_catalog_item` WHERE supplier = '" . $supplier . "' AND date_seen < '" . $this->db->escape($job['started']) . "'");
+		$seen = (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "vm_catalog_item` WHERE supplier = '" . $supplier . "' AND date_seen >= '" . $this->db->escape($job['started']) . "'")->row['n'];
+		$missing = (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "vm_catalog_item` WHERE supplier = '" . $supplier . "' AND date_seen < '" . $this->db->escape($job['started']) . "' AND (local_qty > 0 OR remote_qty > 0)")->row['n'];
+
+		// safety: a cut or partial price list must not switch off the catalogue
+		if ($missing > $seen) {
+			$job['stats']['hidden'] = 0;
+			$job['stats']['guard'] = $missing;
+			$job['finished'] = true;
+			$this->cache->delete('product');
+			@unlink($job['tsv']);
+
+			return;
+		}
+
+		$old = $this->db->query("SELECT product_id FROM `" . DB_PREFIX . "vm_catalog_item` WHERE supplier = '" . $supplier . "' AND date_seen < '" . $this->db->escape($job['started']) . "' AND (local_qty > 0 OR remote_qty > 0)");
 
 		foreach ($old->rows as $r) {
 			$this->db->query("UPDATE `" . DB_PREFIX . "product` SET quantity = 0, status = 0, date_modified = NOW() WHERE product_id = '" . (int)$r['product_id'] . "'");
@@ -815,5 +829,236 @@ class ModelExtensionModuleVmCatalog extends Model {
 
 		$this->cache->delete('product');
 		@unlink($job['tsv']);
+	}
+
+
+	// ------------------------------------------------------------ UTR (UniqueTrade) API
+
+	const UTR_API = 'https://order24-api.utr.ua/api/';
+
+	private function utrFingerprint() {
+		return 'vm-catalog-' . substr(md5(HTTP_CATALOG), 0, 16);
+	}
+
+	private function utrTokenFile() {
+		return $this->workDir() . 'utr_token.json';
+	}
+
+	public function utrHttp($method, $path, $body = null, $token = '', $save_to = '') {
+		if (!function_exists('curl_init')) {
+			return array('code' => 0, 'error' => 'На хостингу вимкнено PHP-розширення cURL');
+		}
+
+		$url = preg_match('#^https://#', $path) ? $path : self::UTR_API . ltrim($path, '/');
+		$ch = curl_init($url);
+		$headers = array('Accept: application/json', 'Language: uk');
+
+		if ($token) {
+			$headers[] = 'Authorization: Bearer ' . $token;
+		}
+
+		$opt = array(
+			CURLOPT_CUSTOMREQUEST  => $method,
+			CURLOPT_CONNECTTIMEOUT => 15,
+			CURLOPT_TIMEOUT        => $save_to ? 600 : 60,
+			CURLOPT_USERAGENT      => 'VM-Catalog/OpenCart',
+			CURLOPT_SSL_VERIFYPEER => true
+		);
+
+		if ($body !== null) {
+			$headers[] = 'Content-Type: application/json';
+			$opt[CURLOPT_POSTFIELDS] = json_encode($body, JSON_UNESCAPED_UNICODE);
+		}
+
+		$fh = null;
+
+		if ($save_to) {
+			$fh = fopen($save_to, 'w');
+			$opt[CURLOPT_FILE] = $fh;
+		} else {
+			$opt[CURLOPT_RETURNTRANSFER] = true;
+		}
+
+		$opt[CURLOPT_HTTPHEADER] = $headers;
+		curl_setopt_array($ch, $opt);
+
+		$res = curl_exec($ch);
+		$code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+		$err = curl_error($ch);
+		curl_close($ch);
+
+		if ($fh) {
+			fclose($fh);
+		}
+
+		if ($res === false) {
+			return array('code' => 0, 'error' => 'Немає зв\'язку з UTR: ' . $err);
+		}
+
+		return array('code' => $code, 'body' => $save_to ? '' : $res, 'json' => $save_to ? null : json_decode($res, true));
+	}
+
+	private function utrLogin($email, $password) {
+		$r = $this->utrHttp('POST', 'login_check?browser_fingerprint=' . urlencode($this->utrFingerprint()), array('email' => $email, 'password' => $password));
+
+		if ($r['code'] == 200 && !empty($r['json']['token'])) {
+			file_put_contents($this->utrTokenFile(), json_encode($r['json']));
+
+			return $r['json']['token'];
+		}
+
+		return array('error' => isset($r['json']['message']) ? $r['json']['message'] : (isset($r['error']) ? $r['error'] : 'Вхід в UTR не вдався (код ' . $r['code'] . ')'));
+	}
+
+	private function utrToken($force = false) {
+		$email = (string)$this->config->get('module_vm_catalog_utr_email');
+		$password = (string)$this->config->get('module_vm_catalog_utr_password');
+
+		if ($email === '' || $password === '') {
+			return array('error' => 'Вкажіть логін і пароль UTR і збережіть налаштування');
+		}
+
+		$t = is_file($this->utrTokenFile()) ? json_decode(file_get_contents($this->utrTokenFile()), true) : null;
+
+		if (!$force && $t && !empty($t['token']) && !empty($t['expires_at']) && strtotime($t['expires_at']) > time() + 120) {
+			return $t['token'];
+		}
+
+		if (!$force && $t && !empty($t['refresh_token'])) {
+			$r = $this->utrHttp('POST', 'token/refresh', array('refresh_token' => $t['refresh_token'], 'browser_fingerprint' => $this->utrFingerprint()));
+
+			if ($r['code'] == 200 && !empty($r['json']['token'])) {
+				file_put_contents($this->utrTokenFile(), json_encode($r['json']));
+
+				return $r['json']['token'];
+			}
+		}
+
+		return $this->utrLogin($email, $password);
+	}
+
+	// authorised call with one re-login on 401
+	public function utr($method, $path, $body = null, $save_to = '') {
+		$token = $this->utrToken();
+
+		if (is_array($token)) {
+			return array('code' => 0, 'error' => $token['error']);
+		}
+
+		$r = $this->utrHttp($method, $path, $body, $token, $save_to);
+
+		if ($r['code'] == 401) {
+			$token = $this->utrToken(true);
+
+			if (is_array($token)) {
+				return array('code' => 0, 'error' => $token['error']);
+			}
+
+			$r = $this->utrHttp($method, $path, $body, $token, $save_to);
+		}
+
+		return $r;
+	}
+
+	// What does UTR give this account? search + the applicability/analogs endpoints
+	public function utrProbe() {
+		$samples = array();
+		$q = $this->db->query("SELECT article, brand FROM `" . DB_PREFIX . "vm_catalog_item` WHERE local_qty > 0 ORDER BY RAND() LIMIT 3");
+
+		foreach ($q->rows as $r) {
+			$samples[] = array($r['article'], $r['brand']);
+		}
+
+		if (!$samples) {
+			$samples = array(array('21819FL', 'SATO TECH'), array('WL7129', 'WIX FILTERS'));
+		}
+
+		$out = array('login' => false, 'items' => array());
+		$token = $this->utrToken(true);
+
+		if (is_array($token)) {
+			$out['error'] = $token['error'];
+
+			return $out;
+		}
+
+		$out['login'] = true;
+
+		foreach ($samples as $s) {
+			$row = array('article' => $s[0], 'brand' => $s[1]);
+			$r = $this->utr('GET', 'search/' . rawurlencode($s[0]) . '?brand=' . rawurlencode($s[1]));
+			$row['search'] = $r['code'];
+
+			if ($r['code'] == 200 && !empty($r['json']['details'][0])) {
+				$d = $r['json']['details'][0];
+				$row['id'] = isset($d['id']) ? $d['id'] : '';
+				$row['title'] = isset($d['title']) ? $d['title'] : '';
+				$row['category'] = isset($d['category']['name']) ? $d['category']['name'] : '';
+				$row['storages'] = isset($d['remains']) ? count($d['remains']) : 0;
+				$row['extra'] = implode(', ', array_diff(array_keys($d), array('multiplicity', 'scanCodes', 'isLoyaltyProgram', 'id', 'brand', 'displayBrand', 'article', 'title', 'quantity', 'yourPrice', 'yourPriceUAH', 'yourPriceEUR', 'remains', 'category', 'units', 'modifier')));
+
+				if ($row['id']) {
+					$a = $this->utr('GET', 'applicability/' . (int)$row['id']);
+					$row['applicability'] = $a['code'] . ($a['code'] == 200 ? ' (' . (is_array($a['json']) ? count($a['json']) : 0) . ')' : '');
+				}
+
+				$n = $this->utr('GET', 'analogs/' . rawurlencode($s[1]) . '/' . rawurlencode($s[0]));
+				$row['analogs'] = $n['code'] . ($n['code'] == 200 ? ' (' . (is_array($n['json']) ? count($n['json']) : 0) . ')' : '');
+			}
+
+			$out['items'][] = $row;
+		}
+
+		return $out;
+	}
+
+	// ---- price list via API: request -> wait -> download
+
+	public function utrPriceRequest() {
+		$r = $this->utr('POST', 'pricelists/export-request', array('format' => 'csv', 'inStock' => true, 'utrArticle' => false, 'showScancode' => false, 'categoriesId' => array(), 'modelsId' => array(), 'visibleBrandsId' => array()));
+
+		if ($r['code'] == 201 && !empty($r['json']['id'])) {
+			return array('id' => (int)$r['json']['id']);
+		}
+
+		if ($r['code'] == 400) {
+			// 3 price lists already queued: reuse the newest one
+			$list = $this->utr('GET', 'pricelists');
+
+			if ($list['code'] == 200 && !empty($list['json'][0]['id'])) {
+				return array('id' => (int)$list['json'][0]['id']);
+			}
+		}
+
+		return array('error' => isset($r['error']) ? $r['error'] : (isset($r['json']['message']) ? $r['json']['message'] : 'UTR не прийняв запит на прайс (код ' . $r['code'] . ')'));
+	}
+
+	public function utrPriceStatus($id) {
+		$r = $this->utr('GET', 'pricelists');
+
+		if ($r['code'] != 200 || !is_array($r['json'])) {
+			return array('error' => isset($r['error']) ? $r['error'] : 'UTR: не вдалося отримати список прайсів (код ' . $r['code'] . ')');
+		}
+
+		foreach ($r['json'] as $p) {
+			if ((int)$p['id'] === (int)$id) {
+				return array('status' => $p['status'], 'token' => isset($p['token']) ? $p['token'] : '', 'size' => isset($p['fileSize']) ? $p['fileSize'] : '');
+			}
+		}
+
+		return array('status' => 'in queue', 'token' => '');
+	}
+
+	public function utrPriceDownload($token) {
+		$file = $this->workDir() . 'source.csv';
+		$r = $this->utr('GET', 'pricelists/export/' . rawurlencode($token), null, $file);
+
+		if ($r['code'] != 200 || !is_file($file) || filesize($file) < 100) {
+			@unlink($file);
+
+			return array('error' => isset($r['error']) ? $r['error'] : 'Не вдалося скачати прайс з UTR (код ' . $r['code'] . ')');
+		}
+
+		return array('file' => $file);
 	}
 }

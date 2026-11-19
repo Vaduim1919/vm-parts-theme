@@ -18,12 +18,14 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 	private function defaults() {
 		return array(
 			'module_vm_catalog_status'     => 1,
-			'module_vm_catalog_supplier'   => 'price',
+			'module_vm_catalog_supplier'   => 'utr',
 			'module_vm_catalog_local'      => 'Вінницька обл.',
 			'module_vm_catalog_days'       => 2,
 			'module_vm_catalog_markup'     => 30,
 			'module_vm_catalog_round'      => 0,
-			'module_vm_catalog_update_url' => self::DEFAULT_UPDATE_URL
+			'module_vm_catalog_update_url' => self::DEFAULT_UPDATE_URL,
+			'module_vm_catalog_utr_email'  => '',
+			'module_vm_catalog_utr_password' => ''
 		);
 	}
 
@@ -81,6 +83,11 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			$data['cat_total'] += 1 + count($root['children']);
 		}
 
+		$data['utr_password_set'] = (string)$this->config->get('module_vm_catalog_utr_password') !== '';
+		$data['module_vm_catalog_utr_password'] = '';
+		$data['utr_save'] = $this->link('saveUtr');
+		$data['utr_probe_url'] = $this->ajaxUrl('utrProbe');
+		$data['utr_price_url'] = $this->ajaxUrl('utrPrice');
 		$data['upload_url'] = $this->ajaxUrl('upload');
 		$data['step_url'] = $this->ajaxUrl('step');
 		$data['categories_action'] = $this->link('categories');
@@ -116,7 +123,10 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			'module_vm_catalog_days'       => max(1, min(60, (int)$get('module_vm_catalog_days'))),
 			'module_vm_catalog_markup'     => max(-90, min(500, (float)str_replace(',', '.', $get('module_vm_catalog_markup')))),
 			'module_vm_catalog_round'      => in_array((int)$get('module_vm_catalog_round'), array(0, 2), true) ? (int)$get('module_vm_catalog_round') : 0,
-			'module_vm_catalog_update_url' => preg_match('#^https://#i', $get('module_vm_catalog_update_url')) ? $get('module_vm_catalog_update_url') : self::DEFAULT_UPDATE_URL
+			'module_vm_catalog_update_url' => preg_match('#^https://#i', $get('module_vm_catalog_update_url')) ? $get('module_vm_catalog_update_url') : self::DEFAULT_UPDATE_URL,
+			'module_vm_catalog_utr_email'  => isset($src['module_vm_catalog_utr_email']) ? mb_substr($get('module_vm_catalog_utr_email'), 0, 128) : (string)$this->config->get('module_vm_catalog_utr_email'),
+			// empty password field = keep the saved one
+			'module_vm_catalog_utr_password' => !empty($src['module_vm_catalog_utr_password']) ? $get('module_vm_catalog_utr_password') : (string)$this->config->get('module_vm_catalog_utr_password')
 		);
 	}
 
@@ -132,6 +142,94 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		}
 
 		$this->response->redirect($this->link());
+	}
+
+	// ---------------------------------------------------------------- UTR
+
+	public function saveUtr() {
+		$this->load->language($this->route);
+
+		if ($this->request->server['REQUEST_METHOD'] == 'POST' && $this->canModify()) {
+			$this->load->model('setting/setting');
+			$opt = $this->cleanOptions(array_merge($this->settings(), $this->request->post));
+			$this->model_setting_setting->editSetting('module_vm_catalog', $opt);
+			$this->load->model($this->route);
+			@unlink($this->model_extension_module_vm_catalog->workDir() . 'utr_token.json');
+			$this->session->data['success'] = $this->language->get('text_success');
+		} else {
+			$this->session->data['vm_catalog_error'] = $this->language->get('error_permission');
+		}
+
+		$this->response->redirect($this->link());
+	}
+
+	public function utrProbe() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify()) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$this->json($this->model_extension_module_vm_catalog->utrProbe());
+	}
+
+	// step=request|status|import : the page calls it in a loop
+	public function utrPrice() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify() || !$this->user->hasPermission('modify', 'catalog/product')) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$m = $this->model_extension_module_vm_catalog;
+		$step = isset($this->request->get['step']) ? $this->request->get['step'] : 'request';
+
+		if ($step === 'request') {
+			return $this->json($m->utrPriceRequest());
+		}
+
+		$id = isset($this->request->get['id']) ? (int)$this->request->get['id'] : 0;
+		$st = $m->utrPriceStatus($id);
+
+		if (isset($st['error']) || $step === 'status' || $st['status'] !== 'complete') {
+			return $this->json($st);
+		}
+
+		// import: download and start the usual job with the saved options
+		@set_time_limit(600);
+		@ini_set('memory_limit', '512M');
+
+		$dl = $m->utrPriceDownload($st['token']);
+
+		if (isset($dl['error'])) {
+			return $this->json($dl);
+		}
+
+		$tsv = $m->workDir() . 'current.tsv';
+		$res = $m->csvToTsv($dl['file'], $tsv);
+		@unlink($dl['file']);
+
+		if (isset($res['error'])) {
+			return $this->json($res);
+		}
+
+		$s = $this->settings();
+		$job = $m->startJob($tsv, array(
+			'supplier' => $s['module_vm_catalog_supplier'],
+			'local'    => $s['module_vm_catalog_local'],
+			'days'     => $s['module_vm_catalog_days'],
+			'markup'   => $s['module_vm_catalog_markup'],
+			'round'    => $s['module_vm_catalog_round'],
+			'file'     => 'UTR API'
+		));
+
+		if (isset($job['error'])) {
+			return $this->json($job);
+		}
+
+		$this->json(array('status' => 'started', 'total' => $job['total']));
 	}
 
 	// ---------------------------------------------------------------- import

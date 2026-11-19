@@ -17,6 +17,24 @@
     </div>
     {% endif %}
 
+    <!-- UTR API -->
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-plug"></i> {{ text_utr_title }}</h3></div>
+      <div class="panel-body">
+        <p>{{ text_utr_help }}</p>
+        <form action="{{ utr_save }}" method="post" class="form-horizontal" autocomplete="off">
+          <div class="form-group"><label class="col-sm-3 control-label">{{ entry_utr_email }}</label><div class="col-sm-4"><input type="text" name="module_vm_catalog_utr_email" value="{{ module_vm_catalog_utr_email }}" class="form-control" autocomplete="off"></div></div>
+          <div class="form-group"><label class="col-sm-3 control-label">{{ entry_utr_password }}</label><div class="col-sm-4"><input type="password" name="module_vm_catalog_utr_password" value="" placeholder="{% if utr_password_set %}{{ text_utr_password_set }}{% endif %}" class="form-control" autocomplete="new-password"></div></div>
+          <div class="form-group"><div class="col-sm-offset-3 col-sm-9">
+            <button type="submit" class="btn btn-default"><i class="fa fa-save"></i> {{ button_save }}</button>
+            <button type="button" id="vm-utr-probe" class="btn btn-info"><i class="fa fa-stethoscope"></i> {{ button_utr_probe }}</button>
+            <button type="button" id="vm-utr-price" class="btn btn-primary"><i class="fa fa-cloud-download"></i> {{ button_utr_price }}</button>
+          </div></div>
+        </form>
+        <div id="vm-utr-result" style="max-width:900px"></div>
+      </div>
+    </div>
+
     <!-- import -->
     <div class="panel panel-primary">
       <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-upload"></i> {{ text_imp_title }}</h3></div>
@@ -92,7 +110,7 @@
   var uploadUrl = '{{ upload_url|e('js') }}', stepUrl = '{{ step_url|e('js') }}';
   var T = {
     reading: '{{ text_reading|e('js') }}', progress: '{{ text_progress|e('js') }}',
-    done: '{{ text_imp_done|e('js') }}', countOff: '{{ text_count_off|e('js') }}', network: '{{ text_network|e('js') }}'
+    done: '{{ text_imp_done|e('js') }}', countOff: '{{ text_count_off|e('js') }}', guard: '{{ text_guard|e('js') }}', network: '{{ text_network|e('js') }}'
   };
   function fmt(s, a) { var i = 0; return s.replace(/%s/g, function () { return a[i++]; }); }
   function status(html, cls) { $('#vm-imp-status').html('<div class="alert alert-' + (cls || 'info') + '">' + html + '</div>'); }
@@ -107,7 +125,7 @@
         lock(false); $('#vm-imp-resume').hide();
         $('#vm-imp-bar .progress-bar').removeClass('active');
         var s = j.stats;
-        status(fmt(T.done, [s.created, s.updated, s.local, s.remote, s.skipped, s.hidden]) + (s.count_off ? '<br>' + T.countOff : ''), 'success');
+        status(fmt(T.done, [s.created, s.updated, s.local, s.remote, s.skipped, s.hidden]) + (s.count_off ? '<br>' + T.countOff : '') + (s.guard ? '<br><b>' + fmt(T.guard, [s.guard]) + '</b>' : ''), s.guard ? 'warning' : 'success');
         return;
       }
       status(fmt(T.progress, [j.done, j.total]));
@@ -129,6 +147,49 @@
   });
 
   $('#vm-imp-resume').on('click', function () { lock(true); step(); });
+
+  // ---- UTR
+  var utrProbeUrl = '{{ utr_probe_url|e('js') }}', utrPriceUrl = '{{ utr_price_url|e('js') }}';
+  function utrMsg(html, cls) { $('#vm-utr-result').html('<div class="alert alert-' + (cls || 'info') + '">' + html + '</div>'); }
+  function esc(t) { return $('<div>').text(t == null ? '' : String(t)).html(); }
+
+  $('#vm-utr-probe').on('click', function () {
+    var b = $(this).prop('disabled', true);
+    utrMsg('{{ text_utr_probing|e('js') }}');
+    $.getJSON(utrProbeUrl).done(function (j) {
+      if (j.error) { utrMsg(esc(j.error), 'danger'); return; }
+      var h = '<p><b>{{ text_utr_login_ok|e('js') }}</b></p><table class="table table-condensed table-bordered"><tr><th>Артикул</th><th>Бренд</th><th>Пошук</th><th>Назва / категорія UTR</th><th>Складів</th><th>Застосовність</th><th>Аналоги</th><th>Інші поля</th></tr>';
+      $.each(j.items, function (i, r) {
+        h += '<tr><td>' + esc(r.article) + '</td><td>' + esc(r.brand) + '</td><td>' + esc(r.search) + '</td><td>' + esc(r.title) + '<br><small>' + esc(r.category) + '</small></td><td>' + esc(r.storages) + '</td><td>' + esc(r.applicability) + '</td><td>' + esc(r.analogs) + '</td><td><small>' + esc(r.extra) + '</small></td></tr>';
+      });
+      utrMsg(h + '</table><p class="text-muted">{{ text_utr_codes|e('js') }}</p>', 'info');
+    }).fail(function () { utrMsg(T.network, 'warning'); }).always(function () { b.prop('disabled', false); });
+  });
+
+  $('#vm-utr-price').on('click', function () {
+    var b = $(this).prop('disabled', true);
+    utrMsg('{{ text_utr_requesting|e('js') }}');
+    $.getJSON(utrPriceUrl + '&step=request').done(function (j) {
+      if (j.error) { b.prop('disabled', false); utrMsg(esc(j.error), 'danger'); return; }
+      var id = j.id, tries = 0;
+      (function poll() {
+        $.getJSON(utrPriceUrl + '&step=import&id=' + id, { _: Date.now() }).done(function (s) {
+          if (s.error) { b.prop('disabled', false); utrMsg(esc(s.error), 'danger'); return; }
+          if (s.status === 'started') {
+            b.prop('disabled', false);
+            utrMsg('{{ text_utr_downloaded|e('js') }}', 'success');
+            $('html,body').animate({ scrollTop: $('#vm-imp-status').offset().top - 80 }, 300);
+            lock(true); bar(0); status(fmt(T.progress, [0, s.total])); step();
+            return;
+          }
+          if (s.status === 'error') { b.prop('disabled', false); utrMsg('{{ text_utr_price_error|e('js') }}', 'danger'); return; }
+          utrMsg('{{ text_utr_waiting|e('js') }} (' + (++tries * 10) + ' с)');
+          setTimeout(poll, 10000);
+        }).fail(function () { setTimeout(poll, 15000); });
+      })();
+    }).fail(function () { b.prop('disabled', false); utrMsg(T.network, 'warning'); });
+  });
+
 })(jQuery);
 //--></script>
 {{ footer }}
