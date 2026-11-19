@@ -422,6 +422,21 @@ class ModelExtensionModuleVmCatalog extends Model {
 			}
 		}
 
+		// not exact ("Вінниця", "Склад Вінниця", "Вінницька область"): match by the word stem
+		if ($map['local'] < 0 && trim($local_name) !== '') {
+			$word = preg_split('/[\s,.\-]+/u', $norm($local_name), -1, PREG_SPLIT_NO_EMPTY);
+			$stem = $word ? mb_substr($word[0], 0, max(4, mb_strlen($word[0], 'UTF-8') - 3), 'UTF-8') : '';
+
+			if (mb_strlen($stem, 'UTF-8') >= 4) {
+				foreach ($map['stock'] as $i => $h) {
+					if (mb_strpos($norm($h), $stem, 0, 'UTF-8') !== false) {
+						$map['local'] = $i;
+						break;
+					}
+				}
+			}
+		}
+
 		return $map;
 	}
 
@@ -492,6 +507,7 @@ class ModelExtensionModuleVmCatalog extends Model {
 		);
 
 		$this->saveJob($job);
+		@file_put_contents($this->workDir() . 'last_columns.json', json_encode(array('date' => date('Y-m-d H:i'), 'file' => isset($opt['file']) ? $opt['file'] : '', 'header' => $header, 'local' => $map['local'] >= 0 ? $header[$map['local']] : '', 'local_setting' => $opt['local']), JSON_UNESCAPED_UNICODE));
 
 		return $job;
 	}

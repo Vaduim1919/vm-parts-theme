@@ -680,6 +680,10 @@ class VmCatalogEnricher {
 		$out = array();
 		$out[] = 'mode=' . $this->setting('bm_photos', 'local') . ' pattern=' . $this->setting('bm_img_pattern', '-') . ' last_error=' . $this->setting('bm_img_error', '-');
 		$out[] = 'DIR_IMAGE=' . DIR_IMAGE . ' writable=' . (is_writable(DIR_IMAGE . 'catalog/') ? 'yes' : 'NO');
+		$cols = DIR_UPLOAD . 'vm_catalog/last_columns.json';
+		$out[] = 'last import columns: ' . (is_file($cols) ? file_get_contents($cols) : '(no record yet)');
+		$st = $this->db->query("SELECT supplier, COUNT(*) AS n, SUM(local_qty > 0) AS l, SUM(local_qty = 0 AND remote_qty > 0) AS r FROM `" . DB_PREFIX . "vm_catalog_item` GROUP BY supplier")->rows;
+		$out[] = 'items: ' . json_encode($st, JSON_UNESCAPED_UNICODE);
 		$row = $this->db->query("SELECT e.product_id, e.ext_id, e.images, p.image, MAX(i.local_qty) AS lq FROM `" . DB_PREFIX . "vm_catalog_enrich` e JOIN `" . DB_PREFIX . "product` p ON (p.product_id = e.product_id) LEFT JOIN `" . DB_PREFIX . "vm_catalog_item` i ON (i.product_id = e.product_id) WHERE e.status = 1 AND e.ext_id <> '' GROUP BY e.product_id ORDER BY (p.image = '') DESC, MAX(i.local_qty) DESC LIMIT 1")->row;
 
 		if (!$row) {
