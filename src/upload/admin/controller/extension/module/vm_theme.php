@@ -88,8 +88,9 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		$data['version'] = $this->model_extension_module_vm_theme->getVersion();
 		$data['backups'] = $this->model_extension_module_vm_theme->getBackups();
-		$data['check_url'] = html_entity_decode($this->link('checkUpdate'), ENT_QUOTES, 'UTF-8');
-		$data['update_url'] = html_entity_decode($this->link('update'), ENT_QUOTES, 'UTF-8');
+		// relative URLs: work whatever HTTP(S)_SERVER says in admin/config.php (avoids blocked mixed-content requests)
+		$data['check_url'] = 'index.php?route=' . $this->route . '/checkUpdate&user_token=' . $this->session->data['user_token'];
+		$data['update_url'] = 'index.php?route=' . $this->route . '/update&user_token=' . $this->session->data['user_token'];
 		$data['upload_action'] = $this->link('upload');
 		$data['rollback'] = $this->link('rollback');
 		$data['zip_ok'] = class_exists('ZipArchive');

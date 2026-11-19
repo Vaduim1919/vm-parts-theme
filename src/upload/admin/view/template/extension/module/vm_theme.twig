@@ -101,6 +101,11 @@
   var checkUrl = '{{ check_url|e('js') }}', updateUrl = '{{ update_url|e('js') }}';
   var $r = $('#vm-upd-result'), $u = $('#vm-update');
   var esc = function (s) { return $('<div/>').text(s || '').html(); };
+  var failText = function (x) {
+    if (!x.status) { return '{{ error_upd_network|e('js') }}'; }
+    var t = (x.responseText || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+    return x.status + (t ? ': ' + t : '');
+  };
   $('#vm-check').on('click', function () {
     var $b = $(this).prop('disabled', true);
     $r.html('<p class="text-muted">{{ text_checking|e('js') }}</p>'); $u.hide();
@@ -110,7 +115,7 @@
       var html = '<div class="alert ' + (j.newer ? 'alert-info' : 'alert-success') + '">' + esc(j.message) + (j.notes ? '<br><small style="white-space:pre-line">' + esc(j.notes) + '</small>' : '') + '</div>';
       $r.html(html);
       if (j.newer) { $u.show().find('span').text('{{ button_update|e('js') }} ' + j.version); }
-    }).fail(function (x) { $b.prop('disabled', false); $r.html('<div class="alert alert-danger">' + x.status + '</div>'); });
+    }).fail(function (x) { $b.prop('disabled', false); $r.html('<div class="alert alert-danger">' + esc(failText(x)) + '</div>'); });
   });
   $u.on('click', function () {
     if (!confirm('{{ text_confirm_upd|e('js') }}')) return;
@@ -119,7 +124,7 @@
       if (j.error) { $u.prop('disabled', false); $r.html('<div class="alert alert-danger">' + esc(j.error) + '</div>'); return; }
       $r.html('<div class="alert alert-success">' + esc(j.success) + '</div>'); $u.hide();
       setTimeout(function () { location.reload(); }, 1500);
-    }, 'json').fail(function (x) { $u.prop('disabled', false); $r.html('<div class="alert alert-danger">' + x.status + ' ' + esc((x.responseText || '').slice(0, 300)) + '</div>'); });
+    }, 'json').fail(function (x) { $u.prop('disabled', false); $r.html('<div class="alert alert-danger">' + esc(failText(x)) + '</div>'); });
   });
 })();
 //--></script>
