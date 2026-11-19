@@ -61,6 +61,9 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		switch ($route) {
 			case 'common/header':
+				$data['vm_home'] = $this->url->link('common/home');
+				$data['vm_cart_link'] = $this->url->link('checkout/cart');
+				$data['vm_cart_count'] = $this->cartCount();
 				$this->header($data);
 				break;
 			case 'common/home':
@@ -68,9 +71,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				break;
 			case 'common/footer':
 				$data['vm_menu'] = $this->menu();
-				$data['vm_home'] = $this->url->link('common/home');
-				$data['vm_cart_link'] = $this->url->link('checkout/cart');
-				$data['vm_cart_count'] = $this->cartCount();
+
 				$data['telephone'] = $this->config->get('config_telephone');
 				$data['vm_address'] = nl2br($this->config->get('config_address'));
 				$data['vm_open'] = nl2br($this->config->get('config_open'));

@@ -15,6 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link href="catalog/view/theme/vm_parts/stylesheet/stylesheet.css?v={{ vm.version }}" rel="stylesheet">
+<script src="catalog/view/theme/vm_parts/js/vm.js?v={{ vm.version }}"></script>
 {% for style in styles %}
 <link href="{{ style.href }}" type="text/css" rel="{{ style.rel }}" media="{{ style.media }}" />
 {% endfor %}
@@ -147,3 +148,10 @@
     </div>
   </div>
 </aside>
+<nav class="vm-bottomnav" aria-label="{{ vm_t.text_menu }}">
+  <a href="{{ vm_home }}"><i class="fa fa-home"></i><span>{{ vm_t.text_home }}</span></a>
+  <button type="button" onclick="vmDrawer(true)"><i class="fa fa-th-large"></i><span>{{ vm_t.text_catalog_btn }}</span></button>
+  <button type="button" onclick="vmSearch()"><i class="fa fa-search"></i><span>{{ vm_t.text_search_btn }}</span></button>
+  <a href="{{ vm_cart_link }}" class="vm-bn-cart"><i class="fa fa-shopping-cart"></i><b id="vm-bn-count"{% if not vm_cart_count %} hidden{% endif %}>{{ vm_cart_count }}</b><span>{{ vm_t.text_cart }}</span></a>
+  <button type="button" onclick="vmChat()"><i class="fa fa-comments"></i><span>{{ vm_t.text_chat }}</span></button>
+</nav>

@@ -241,6 +241,7 @@ class ModelExtensionModuleVmTheme extends Model {
 
 		$this->pruneBackups(5);
 		$this->clearTwigCache();
+		$this->clearModificationCopies($files);
 
 		if (function_exists('opcache_reset')) {
 			@opcache_reset();
@@ -348,6 +349,22 @@ class ModelExtensionModuleVmTheme extends Model {
 
 			foreach (array_slice($list, $keep) as $old) {
 				@unlink($old);
+			}
+		}
+	}
+
+	// Other OCMOD extensions may keep their own patched copies of theme files in
+	// storage/modification; those copies would hide the files we just installed.
+	public function clearModificationCopies($files) {
+		if (!defined('DIR_MODIFICATION')) {
+			return;
+		}
+
+		foreach ($files as $f) {
+			$copy = DIR_MODIFICATION . $f['rel'];
+
+			if (is_file($copy)) {
+				@unlink($copy);
 			}
 		}
 	}
