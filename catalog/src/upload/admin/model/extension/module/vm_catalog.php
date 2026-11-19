@@ -1120,29 +1120,43 @@ class ModelExtensionModuleVmCatalog extends Model {
 		return array('code' => $code, 'json' => json_decode($res, true), 'body' => $res);
 	}
 
-	// short description of a JSON value: keys and sizes, never the whole thing
+	// short description of a JSON value: keys, sizes and short scalar values
 	private function shape($v, $depth = 0) {
 		if (is_array($v)) {
-			$assoc = array_keys($v) !== range(0, count($v) - 1);
-
-			if (!$assoc) {
-				return '[' . count($v) . ']' . ($v && $depth < 1 ? ' ' . $this->shape(reset($v), $depth + 1) : '');
+			if (!$v) {
+				return '(порожньо)';
 			}
 
-			if ($depth >= 2) {
-				return '{' . implode(', ', array_slice(array_keys($v), 0, 12)) . '}';
+			$list = array_keys($v) === range(0, count($v) - 1);
+
+			if ($list) {
+				return '[' . count($v) . '] ' . ($depth < 5 ? $this->shape(reset($v), $depth + 1) : '');
+			}
+
+			if ($depth >= 4) {
+				return '{' . implode(', ', array_slice(array_keys($v), 0, 15)) . '}';
 			}
 
 			$out = array();
+			$i = 0;
 
 			foreach ($v as $k => $x) {
-				$out[] = $k . (is_array($x) ? ': ' . $this->shape($x, $depth + 1) : '');
+				if (++$i > 25) {
+					$out[] = '… ще ' . (count($v) - 25);
+					break;
+				}
+
+				$out[] = $k . ': ' . $this->shape($x, $depth + 1);
 			}
 
 			return '{' . implode(', ', $out) . '}';
 		}
 
-		return gettype($v);
+		if (is_string($v)) {
+			return '"' . mb_substr($v, 0, 40) . (mb_strlen($v) > 40 ? '…' : '') . '"';
+		}
+
+		return var_export($v, true);
 	}
 
 	private function firstProduct($json) {
@@ -1164,52 +1178,68 @@ class ModelExtensionModuleVmCatalog extends Model {
 
 	public function bmProbe() {
 		$out = array('steps' => array());
-		$add = function ($name, $r, $note = '') use (&$out) {
+		$add = function ($name, $r) use (&$out) {
 			$out['steps'][] = array(
 				'name'  => $name,
 				'code'  => $r['code'],
-				'error' => isset($r['error']) ? $r['error'] : (isset($r['json']['message']) ? (is_string($r['json']['message']) ? $r['json']['message'] : json_encode($r['json']['message'], JSON_UNESCAPED_UNICODE)) : ''),
-				'shape' => isset($r['json']) && $r['code'] == 200 ? mb_substr($this->shape($r['json']), 0, 1500) : '',
-				'note'  => $note
+				'error' => isset($r['error']) ? $r['error'] : ($r['code'] != 200 && isset($r['json']['message']) ? (is_string($r['json']['message']) ? $r['json']['message'] : json_encode($r['json']['message'], JSON_UNESCAPED_UNICODE)) : ''),
+				'shape' => isset($r['json']) && $r['code'] == 200 ? mb_substr($this->shape($r['json']), 0, 2500) : mb_substr((string)(isset($r['body']) ? $r['body'] : ''), 0, 300)
 			);
 		};
 
 		$r = $this->bm('GET', 'catalog/cars/brands/');
 		$add('Марки авто (catalog/cars/brands)', $r);
 
-		if ($r['code'] == 0 || $r['code'] == 401 || $r['code'] == 403) {
+		if ($r['code'] != 200) {
 			return $out;
 		}
 
-		$sample = $this->db->query("SELECT article, brand FROM `" . DB_PREFIX . "vm_catalog_item` WHERE local_qty > 0 ORDER BY RAND() LIMIT 1")->row;
-		$q = $sample ? $sample['article'] : '21819FL';
+		$car = 'VOLKSWAGEN';
 
-		$r = $this->bm('GET', 'search/products', array('q' => $q, 'products_as' => 'obj', 'per_page' => 5));
-		$add('Пошук за артикулом ' . $q . ' (search/products)', $r);
+		if (!empty($r['json']['car_brands'][0])) {
+			$c = $r['json']['car_brands'][0];
+			$car = is_array($c) ? (isset($c['name']) ? $c['name'] : (string)reset($c)) : (string)$c;
+		}
 
-		$first = $this->firstProduct(isset($r['json']) ? $r['json'] : null);
+		$tries = array();
+		$sample = $this->db->query("SELECT article FROM `" . DB_PREFIX . "vm_catalog_item` WHERE local_qty > 0 ORDER BY RAND() LIMIT 1")->row;
+
+		foreach (array_filter(array($sample ? $sample['article'] : '', '21819FL', 'OC90', '334834')) as $q) {
+			$tries[$q] = true;
+		}
+
 		$uuid = '';
 
-		if ($first) {
-			$uuid = isset($first[1]['uuid']) ? $first[1]['uuid'] : (is_string($first[0]) && strlen($first[0]) > 20 ? $first[0] : '');
+		foreach (array_keys($tries) as $q) {
+			$r = $this->bm('GET', 'search/products', array('q' => $q, 'products_as' => 'obj', 'per_page' => 3, 'search_mode' => 'extended'));
+			$add('Пошук «' . $q . '»', $r);
+
+			if (!$uuid && !empty($r['json']['products']) && is_array($r['json']['products'])) {
+				$first = reset($r['json']['products']);
+				$key = key($r['json']['products']);
+				$uuid = is_array($first) && !empty($first['uuid']) ? $first['uuid'] : (is_string($key) ? $key : '');
+			}
 		}
+
+		$r = $this->bm('GET', 'search/products', array('cars' => $car, 'products_as' => 'obj', 'per_page' => 3));
+		$add('Товари для марки «' . $car . '» (cars=' . $car . ', без q)', $r);
+
+		if (!$uuid && !empty($r['json']['products']) && is_array($r['json']['products'])) {
+			$first = reset($r['json']['products']);
+			$key = key($r['json']['products']);
+			$uuid = is_array($first) && !empty($first['uuid']) ? $first['uuid'] : (is_string($key) ? $key : '');
+		}
+
+		$r = $this->bm('GET', 'search/products/aggregations/cars', array('q' => 'амортизатор'));
+		$add('Агрегація авто для «амортизатор»', $r);
 
 		if ($uuid) {
 			$r = $this->bm('GET', 'product/' . rawurlencode($uuid), array('products_as' => 'obj', 'oe' => 'short', 'output_field' => 'all', 'with_extra' => 'true'));
-			$add('Картка товару (product/{uuid})', $r);
+			$add('Картка товару ' . $uuid, $r);
 
 			$r = $this->bm('GET', 'product/' . rawurlencode($uuid) . '/images');
-			$add('Фото товару (product/{uuid}/images)', $r);
-
-			$r = $this->bm('GET', 'product/' . rawurlencode($uuid) . '/in_stocks');
-			$add('Залишки по складах (product/{uuid}/in_stocks)', $r);
+			$add('Фото товару', $r);
 		}
-
-		$r = $this->bm('GET', 'search/products/aggregations/cars', array('q' => $q));
-		$add('До яких авто підходить (aggregations/cars, q=' . $q . ')', $r);
-
-		$r = $this->bm('GET', 'search/products', array('q' => 'амортизатор', 'cars' => 'VOLKSWAGEN>PASSAT', 'products_as' => 'obj', 'per_page' => 3));
-		$add('Пошук з фільтром авто (cars=VOLKSWAGEN>PASSAT)', $r);
 
 		return $out;
 	}
