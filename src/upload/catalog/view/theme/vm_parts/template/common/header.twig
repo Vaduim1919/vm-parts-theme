@@ -32,7 +32,7 @@
 {% if icon %}<link href="{{ icon }}" rel="icon" />{% endif %}
 {{ vm.head_code }}
 </head>
-<body class="vm{% if vm_is_home %} vm-home{% endif %}">
+<body class="vm {{ vm_route_class }}{% if vm_is_home %} vm-home{% endif %}">
 {{ vm.body_code }}
 <div class="vm-topbar">
   <div class="container vm-row">

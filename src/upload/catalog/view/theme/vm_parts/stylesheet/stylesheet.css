@@ -465,3 +465,139 @@ html.vm-noscroll,html.vm-noscroll body{overflow:hidden}
 .vm-wh-line{display:flex;align-items:baseline;gap:6px;font-size:13px}
 .vm-wh-line .vm-stock{font-size:13px;font-weight:700}
 .vm-wh-line small{color:var(--vm-muted);font-size:12px}
+
+/* ================= 1.1.9: checkout (Simple) ================= */
+/* account menu column is not needed while ordering */
+.vm-r-checkout-simplecheckout #column-left,.vm-r-checkout-simplecheckout #column-right,
+.vm-r-checkout-cart #column-left,.vm-r-checkout-cart #column-right{display:none}
+.vm-r-checkout-simplecheckout #content,.vm-r-checkout-cart #content{width:100%;float:none}
+.vm-r-checkout-simplecheckout #content>h1{font-size:28px;font-weight:900;margin:6px 0 18px}
+
+.vm .simple-content{font-size:14px;color:var(--vm-text)}
+.vm .simple-content .simplecheckout{max-width:none}
+.vm .simple-content .simplecheckout-block{background:#fff;border:1px solid var(--vm-line);border-radius:12px;margin:0 0 16px;padding:0;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.vm .simple-content .checkout-heading,.vm .simple-content .simplecheckout-block .panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:0;border-bottom:1px solid var(--vm-line);border-radius:0;padding:14px 20px;margin:0;font-size:17px;font-weight:700;color:var(--vm-text)}
+.vm .simple-content .checkout-heading-button{float:none;font-size:13px;font-weight:500}
+.vm .simple-content .checkout-heading-button a{color:var(--vm-blue)}
+.vm .simple-content .checkout-heading-button a.text-danger{color:var(--vm-red)}
+.vm .simple-content .simplecheckout-block-content{padding:18px 20px;border:0;margin:0}
+.vm .simple-content .alert{border-radius:10px;margin:12px 20px}
+
+/* cart table */
+.vm .simple-content #simplecheckout_cart .table-responsive{border:0;margin:0}
+.vm .simple-content table.simplecheckout-cart{width:100%;border:0;border-collapse:collapse;margin:0}
+.vm .simple-content table.simplecheckout-cart col.image{width:96px}
+.vm .simple-content table.simplecheckout-cart col.quantity{width:170px}
+.vm .simple-content table.simplecheckout-cart col.price,.vm .simple-content table.simplecheckout-cart col.total{width:120px}
+.vm .simple-content table.simplecheckout-cart col.remove{width:0}
+.vm .simple-content table.simplecheckout-cart th{background:var(--vm-bg);border:0;border-bottom:1px solid var(--vm-line);color:var(--vm-muted);font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.3px;padding:10px 12px;text-align:left;white-space:nowrap}
+.vm .simple-content table.simplecheckout-cart th.image{padding-left:20px}
+.vm .simple-content table.simplecheckout-cart td{border:0;border-bottom:1px solid #eef1f5;padding:16px 12px;vertical-align:middle;background:#fff;text-align:left}
+.vm .simple-content table.simplecheckout-cart tr:last-child td{border-bottom:0}
+.vm .simple-content table.simplecheckout-cart td.image{padding-left:20px}
+.vm .simple-content table.simplecheckout-cart td.image img{width:72px;height:72px;object-fit:contain;border:1px solid var(--vm-line);border-radius:10px;padding:4px;background:#fff;max-width:none}
+.vm .simple-content table.simplecheckout-cart td.name .image{display:none}
+.vm .simple-content table.simplecheckout-cart td.name a{color:var(--vm-text);font-weight:500;font-size:15px;line-height:1.35}
+.vm .simple-content table.simplecheckout-cart td.name a:hover{color:var(--vm-blue)}
+.vm .simple-content table.simplecheckout-cart td.model{color:var(--vm-muted);font-size:13px;white-space:nowrap}
+.vm .simple-content table.simplecheckout-cart td.price{color:var(--vm-muted);white-space:nowrap}
+.vm .simple-content table.simplecheckout-cart td.total{font-weight:700;font-size:16px;white-space:nowrap;text-align:right;padding-right:20px}
+.vm .simple-content table.simplecheckout-cart th.total{text-align:right;padding-right:20px}
+/* quantity stepper */
+.vm .simple-content td.quantity .input-group{display:flex;align-items:center;width:auto;max-width:none!important}
+.vm .simple-content td.quantity .input-group-btn{display:flex;width:auto;font-size:inherit}
+.vm .simple-content td.quantity .input-group .form-control{width:44px;height:36px;padding:0;text-align:center;border:1px solid var(--vm-line2);border-left:0;border-right:0;border-radius:0;box-shadow:none;font-weight:700;float:none}
+.vm .simple-content td.quantity .btn-primary{width:36px;height:36px;padding:0;background:var(--vm-bg);border:1px solid var(--vm-line2);color:var(--vm-text);box-shadow:none;border-radius:0}
+.vm .simple-content td.quantity .input-group-btn:first-child .btn-primary{border-radius:8px 0 0 8px}
+.vm .simple-content td.quantity .input-group-btn:last-child .btn-primary{border-radius:0 8px 8px 0}
+.vm .simple-content td.quantity .btn-primary:hover{background:var(--vm-blue-soft);color:var(--vm-blue)}
+.vm .simple-content td.quantity .btn-danger{width:36px;height:36px;margin-left:8px;padding:0;background:none;border:0;color:#9aa4b2;border-radius:8px;box-shadow:none;font-size:17px}
+.vm .simple-content td.quantity .btn-danger:hover{color:var(--vm-red);background:#fdecec}
+/* totals */
+.vm .simple-content .simplecheckout-cart-total{display:flex;justify-content:flex-end;align-items:center;gap:14px;border:0;background:#fff;padding:6px 20px;margin:0;text-align:right}
+.vm .simple-content .simplecheckout-cart-total b{font-weight:500;color:var(--vm-muted)}
+.vm .simple-content .simplecheckout-cart-total-value{min-width:120px;font-weight:700;display:inline-block}
+.vm .simple-content .simplecheckout-cart-total-remove{width:auto;display:inline-block}
+.vm .simple-content #total_sub_total{padding-top:14px;border-top:1px solid var(--vm-line)}
+.vm .simple-content #total_total{padding:10px 20px 16px}
+.vm .simple-content #total_total b{color:var(--vm-text);font-weight:700;font-size:16px}
+.vm .simple-content #total_total .simplecheckout-cart-total-value{font-size:22px;font-weight:900;color:var(--vm-text)}
+.vm .simple-content .simplecheckout-cart-total .inputs{display:flex;align-items:center;gap:10px;color:var(--vm-muted);font-size:13px}
+.vm .simple-content .simplecheckout-cart-total .inputs .form-control{width:200px;height:38px;border-radius:8px;display:inline-block}
+.vm .simple-content .simplecheckout-cart-buttons{padding:8px 20px 18px}
+.vm .simple-content .simplecheckout-cart-buttons .btn{background:#fff;color:var(--vm-blue);border:1px solid var(--vm-blue);border-radius:8px;padding:8px 18px;font-weight:500;box-shadow:none}
+.vm .simple-content .simplecheckout-cart-buttons .btn:hover{background:var(--vm-blue-soft)}
+
+/* form fields */
+.vm .simple-content .form-group{margin:0 0 14px}
+.vm .simple-content .form-group:last-child{margin-bottom:0}
+.vm .simple-content .control-label{font-weight:500;color:var(--vm-text);padding-top:11px}
+.vm .simple-content .form-group.required .control-label:before{color:var(--vm-red)}
+.vm .simple-content .form-control{height:44px;border:1px solid var(--vm-line2);border-radius:8px;box-shadow:none;font-size:15px;padding:8px 12px}
+.vm .simple-content textarea.form-control{height:auto;min-height:90px}
+.vm .simple-content .form-control:focus{border-color:var(--vm-blue);box-shadow:0 0 0 3px rgba(43,119,181,.15)}
+.vm .simple-content .simplecheckout-error-text,.vm .simple-content .text-danger{color:var(--vm-red);font-size:13px}
+/* radio options as selectable cards */
+.vm .simple-content .simplecheckout-block-content>p{margin:4px 0 8px;color:var(--vm-muted);font-size:13px}
+.vm .simple-content .radio,.vm .simple-content .checkbox{margin:0 0 8px}
+.vm .simple-content .radio label,.vm .simple-content .checkbox label{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 14px;border:1px solid var(--vm-line2);border-radius:10px;background:#fff;font-weight:500;cursor:pointer;transition:border-color .15s,background .15s}
+.vm .simple-content .radio label:hover,.vm .simple-content .checkbox label:hover{border-color:var(--vm-blue)}
+.vm .simple-content .radio input[type=radio],.vm .simple-content .checkbox input[type=checkbox]{position:static;margin:0;flex:0 0 auto;width:18px;height:18px;accent-color:var(--vm-blue)}
+.vm .simple-content .radio label:has(input:checked),.vm .simple-content .checkbox label:has(input:checked){border-color:var(--vm-blue);background:var(--vm-blue-soft);color:var(--vm-blue)}
+.vm .simple-content .row-customer_register .radio{display:inline-block;margin-right:8px}
+.vm .simple-content .row-customer_register .radio label{min-height:40px;padding:8px 16px}
+.vm .simple-content .simplecheckout-methods-description{color:var(--vm-muted);font-size:13px;margin:6px 0 0}
+
+/* order button */
+.vm .simple-content .simplecheckout-button-block{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:center;gap:12px;background:none;border:0;padding:4px 0 10px;margin:0}
+.vm .simple-content .simplecheckout-button-right,.vm .simple-content .simplecheckout-button-left{float:none;text-align:right}
+.vm .simple-content #simplecheckout_button_confirm,.vm .simple-content #simplecheckout_button_next{display:inline-flex;align-items:center;justify-content:center;min-width:300px;height:56px;padding:0 32px;background:var(--vm-green);border:0;border-radius:12px;color:#fff;font-size:18px;font-weight:700;box-shadow:0 6px 16px rgba(34,163,90,.28)}
+.vm .simple-content #simplecheckout_button_confirm:hover,.vm .simple-content #simplecheckout_button_next:hover{background:var(--vm-green-dark)}
+.vm .simple-content #simplecheckout_button_confirm[disabled]{opacity:.6}
+.vm .simple-content #simplecheckout_button_back,.vm .simple-content #simplecheckout_button_prev{background:#fff;color:var(--vm-text);border:1px solid var(--vm-line2);border-radius:10px;height:46px;padding:0 20px;display:inline-flex;align-items:center;box-shadow:none}
+
+/* desktop: two columns when Simple uses them */
+@media (min-width:992px){
+  .vm .simple-content .simplecheckout-left-column{padding-right:8px}
+  .vm .simple-content .simplecheckout-right-column{padding-left:8px}
+}
+
+@media (max-width:767px){
+  .vm-r-checkout-simplecheckout #content>h1{font-size:22px;margin-bottom:12px}
+  .vm .simple-content .checkout-heading{padding:12px 14px;font-size:16px}
+  .vm .simple-content .simplecheckout-block-content{padding:14px}
+  /* cart rows become cards: photo | name, then quantity | total */
+  .vm .simple-content table.simplecheckout-cart thead,.vm .simple-content table.simplecheckout-cart colgroup{display:none}
+  .vm .simple-content table.simplecheckout-cart,.vm .simple-content table.simplecheckout-cart tbody{display:block}
+  .vm .simple-content table.simplecheckout-cart tr{display:grid;grid-template-columns:72px 1fr auto;grid-template-areas:"img name name" "img qty total";gap:8px 12px;padding:14px;border-bottom:1px solid #eef1f5}
+  .vm .simple-content table.simplecheckout-cart tr:last-child{border-bottom:0}
+  .vm .simple-content table.simplecheckout-cart td{display:block;border:0;padding:0}
+  .vm .simple-content table.simplecheckout-cart td.image{grid-area:img;padding:0;display:block!important}
+  .vm .simple-content table.simplecheckout-cart td.image img{width:72px;height:72px}
+  .vm .simple-content table.simplecheckout-cart td.name{grid-area:name;display:block!important}
+  .vm .simple-content table.simplecheckout-cart td.name a{font-size:14px}
+  .vm .simple-content table.simplecheckout-cart td.quantity{grid-area:qty;display:block!important}
+  .vm .simple-content table.simplecheckout-cart td.total{grid-area:total;align-self:center;padding:0;font-size:16px;display:block!important}
+  .vm .simple-content table.simplecheckout-cart td.model,.vm .simple-content table.simplecheckout-cart td.price,.vm .simple-content table.simplecheckout-cart td.remove{display:none!important}
+  .vm .simple-content .simplecheckout-cart-total{padding:6px 14px}
+  .vm .simple-content .simplecheckout-cart-total .inputs{flex:1;flex-direction:column;align-items:stretch;gap:4px;text-align:left}
+  .vm .simple-content .simplecheckout-cart-total .inputs .form-control{width:100%;max-width:none}
+  .vm .simple-content .simplecheckout-cart-buttons .inputs{align-items:flex-end}
+  .vm .simple-content td.quantity .btn-danger{margin-left:4px}
+  .vm .simple-content table.simplecheckout-cart td.total{padding-left:6px!important;text-align:right}
+  .vm .simple-content .control-label{padding-top:0;margin-bottom:6px;text-align:left}
+  .vm .simple-content .simplecheckout-button-block{padding:6px 0 16px}
+  .vm .simple-content .simplecheckout-button-right{width:100%}
+  .vm .simple-content #simplecheckout_button_confirm,.vm .simple-content #simplecheckout_button_next{width:100%;min-width:0}
+}
+/* overrides of simple.css rules that use !important or float */
+.vm .simple-content .checkout-heading:after{display:none}
+.vm .simple-content .checkout-heading span{float:none}
+.vm .simple-content .checkout-heading .checkout-heading-button{float:none!important;margin-left:auto}
+.vm .simple-content .radio label,.vm .simple-content .checkbox label{display:flex!important;width:100%}
+.vm .simple-content .row-customer_register .radio label{width:auto}
+.vm .simple-content #simplecheckout_customer .simplecheckout-block-content{text-align:left}
+.vm .simple-content #simplecheckout_comment .simplecheckout-block-content{padding:16px 20px!important}
+.vm .simple-content #simplecheckout_comment textarea{min-height:90px}
+.vm .simple-content .simplecheckout-cart-total .inputs .form-control{margin:0!important}
+@media (max-width:767px){.vm .simple-content #simplecheckout_comment .simplecheckout-block-content{padding:14px!important}}

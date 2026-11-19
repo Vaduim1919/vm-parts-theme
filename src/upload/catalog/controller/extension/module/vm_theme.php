@@ -210,6 +210,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$data['vm_menu'] = $this->menu();
 		$data['vm_route'] = isset($this->request->get['route']) ? (string)$this->request->get['route'] : 'common/home';
 		$data['vm_is_home'] = ($data['vm_route'] == 'common/home' || $data['vm_route'] == '');
+		$data['vm_route_class'] = 'vm-r-' . trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($data['vm_route'])), '-');
 
 		// jQuery file differs between OpenCart 3.0.2/3.0.3 (2.1.1) and 3.0.4 (3.7.x)
 		$jquery = 'catalog/view/javascript/jquery/jquery-2.1.1.min.js';
