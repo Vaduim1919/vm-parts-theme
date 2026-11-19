@@ -1,0 +1,134 @@
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header">
+    <div class="container-fluid">
+      <div class="pull-right"><a href="{{ cancel }}" class="btn btn-default"><i class="fa fa-reply"></i></a></div>
+      <h1>{{ heading_title }}</h1>
+      <ul class="breadcrumb">{% for b in breadcrumbs %}<li><a href="{{ b.href }}">{{ b.text }}</a></li>{% endfor %}</ul>
+    </div>
+  </div>
+  <div class="container-fluid">
+    {% if vm_catalog_error %}<div class="alert alert-danger"><i class="fa fa-exclamation-circle"></i> {{ vm_catalog_error }} <button type="button" class="close" data-dismiss="alert">&times;</button></div>{% endif %}
+    {% if success %}<div class="alert alert-success"><i class="fa fa-check-circle"></i> {{ success }} <button type="button" class="close" data-dismiss="alert">&times;</button></div>{% endif %}
+
+    {% if not stock_checkout %}
+    <div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> {{ text_checkout_off }}
+      <form action="{{ checkout_action }}" method="post" style="display:inline;margin-left:10px"><button type="submit" class="btn btn-warning btn-xs">{{ button_checkout_on }}</button></form>
+    </div>
+    {% endif %}
+
+    <!-- import -->
+    <div class="panel panel-primary">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-upload"></i> {{ text_imp_title }}</h3></div>
+      <div class="panel-body">
+        <p>{{ text_imp_help }}</p>
+        <form id="vm-imp-form" class="form-horizontal" enctype="multipart/form-data" onsubmit="return false">
+          <div class="form-group"><label class="col-sm-3 control-label">{{ entry_supplier }}</label><div class="col-sm-4"><input type="text" name="module_vm_catalog_supplier" value="{{ module_vm_catalog_supplier }}" class="form-control"><p class="help-block">{{ help_supplier }}</p></div></div>
+          <div class="form-group"><label class="col-sm-3 control-label">{{ entry_local }}</label><div class="col-sm-4"><input type="text" name="module_vm_catalog_local" value="{{ module_vm_catalog_local }}" class="form-control"><p class="help-block">{{ help_local }}</p></div></div>
+          <div class="form-group"><label class="col-sm-3 control-label">{{ entry_days }}</label><div class="col-sm-2"><input type="number" min="1" max="60" name="module_vm_catalog_days" value="{{ module_vm_catalog_days }}" class="form-control"></div></div>
+          <div class="form-group"><label class="col-sm-3 control-label">{{ entry_markup }}</label><div class="col-sm-2"><input type="text" name="module_vm_catalog_markup" value="{{ module_vm_catalog_markup }}" class="form-control"></div><div class="col-sm-5"><p class="help-block">{{ help_markup }}</p></div></div>
+          <div class="form-group"><label class="col-sm-3 control-label">{{ entry_round }}</label><div class="col-sm-3"><select name="module_vm_catalog_round" class="form-control"><option value="0"{% if module_vm_catalog_round == 0 %} selected{% endif %}>{{ text_round_0 }}</option><option value="2"{% if module_vm_catalog_round == 2 %} selected{% endif %}>{{ text_round_2 }}</option></select></div></div>
+          <input type="hidden" name="module_vm_catalog_update_url" value="{{ module_vm_catalog_update_url }}">
+          <div class="form-group"><label class="col-sm-3 control-label">{{ entry_file }}</label><div class="col-sm-5"><input type="file" name="file" accept=".xlsx,.csv" class="form-control"><p class="help-block">max {{ upload_max }}</p></div></div>
+          <div class="form-group"><div class="col-sm-offset-3 col-sm-9">
+            <button type="button" id="vm-imp-go" class="btn btn-primary"><i class="fa fa-upload"></i> {{ button_import }}</button>
+            <button type="button" id="vm-imp-resume" class="btn btn-default"{% if not job or job.finished %} style="display:none"{% endif %}><i class="fa fa-play"></i> {{ button_resume }}</button>
+          </div></div>
+        </form>
+        <div id="vm-imp-status" style="max-width:720px">
+          {% if job and not job.finished %}<div class="alert alert-info">{{ text_imp_resume|format(job.done, job.total) }}</div>{% endif %}
+        </div>
+        <div class="progress" id="vm-imp-bar" style="display:none;max-width:720px"><div class="progress-bar progress-bar-striped active" style="width:0%"></div></div>
+
+        {% if stats %}
+        <h4 style="margin-top:20px">{{ text_stats }}</h4>
+        <table class="table table-condensed table-bordered" style="max-width:720px">
+          <tr><th>{{ column_supplier }}</th><th>{{ column_total }}</th><th>{{ column_local }}</th><th>{{ column_remote }}</th><th>{{ column_last }}</th></tr>
+          {% for s in stats %}<tr><td>{{ s.supplier }}</td><td>{{ s.total }}</td><td>{{ s.local_cnt }}</td><td>{{ s.remote_cnt }}</td><td>{{ s.last }}</td></tr>{% endfor %}
+        </table>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- categories -->
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-sitemap"></i> {{ text_cat_title }}</h3></div>
+      <div class="panel-body">
+        <p>{{ text_cat_help|format(cat_preset|length, cat_total) }}</p>
+        <details style="margin-bottom:12px"><summary style="cursor:pointer">{{ text_cat_preview }}</summary>
+          <div style="columns:3;column-gap:24px;margin-top:10px;font-size:12px">
+          {% for root in cat_preset %}<div style="break-inside:avoid;margin-bottom:10px"><b>{{ root.name }}</b> <span class="text-muted">({{ root.children|length }})</span><br>{{ root.children|join(', ') }}</div>{% endfor %}
+          </div>
+        </details>
+        <form action="{{ categories_action }}" method="post" style="display:inline">
+          <button type="submit" class="btn btn-default" onclick="return confirm('{{ text_cat_confirm|e('js') }}');"><i class="fa fa-plus"></i> {{ button_cat_create }}</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- updates -->
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-refresh"></i> {{ text_upd_title }}</h3></div>
+      <div class="panel-body">
+        <p>{{ text_version|format(version) }}</p>
+        {% if update_info %}
+        <div class="alert alert-info">{{ text_upd_available|format(update_info.version, update_info.current) }}{% if update_info.notes %}<br><small>{{ update_info.notes }}</small>{% endif %}</div>
+        <form action="{{ update_action }}" method="post" style="display:inline"><button type="submit" class="btn btn-success"><i class="fa fa-download"></i> {{ button_update|format(update_info.version) }}</button></form>
+        {% else %}
+        <a href="{{ check_action }}" class="btn btn-default"><i class="fa fa-search"></i> {{ button_check }}</a>
+        {% endif %}
+        {% if backups %}
+        <p style="margin-top:15px"><b>{{ text_backups }}</b></p>
+        <table class="table table-condensed" style="max-width:520px">
+          {% for b in backups %}<tr><td>v{{ b.version }}</td><td class="text-muted">{{ b.date }}</td><td class="text-right"><a href="{{ rollback }}&amp;backup={{ b.file }}" class="btn btn-warning btn-xs" onclick="return confirm('{{ text_confirm_rb|e('js') }}');"><i class="fa fa-undo"></i> {{ button_rollback }}</a></td></tr>{% endfor %}
+        </table>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<script type="text/javascript"><!--
+(function ($) {
+  var uploadUrl = '{{ upload_url|e('js') }}', stepUrl = '{{ step_url|e('js') }}';
+  var T = {
+    reading: '{{ text_reading|e('js') }}', progress: '{{ text_progress|e('js') }}',
+    done: '{{ text_imp_done|e('js') }}', network: '{{ text_network|e('js') }}'
+  };
+  function fmt(s, a) { var i = 0; return s.replace(/%s/g, function () { return a[i++]; }); }
+  function status(html, cls) { $('#vm-imp-status').html('<div class="alert alert-' + (cls || 'info') + '">' + html + '</div>'); }
+  function bar(p) { $('#vm-imp-bar').show().find('.progress-bar').css('width', p + '%').text(p + '%'); }
+  function lock(on) { $('#vm-imp-go, #vm-imp-resume').prop('disabled', on); }
+
+  function step() {
+    $.ajax({ url: stepUrl, type: 'post', dataType: 'json', timeout: 180000 }).done(function (j) {
+      if (j.error) { lock(false); status(j.error, 'danger'); return; }
+      bar(j.total ? Math.floor(j.done * 100 / j.total) : 100);
+      if (j.finished) {
+        lock(false); $('#vm-imp-resume').hide();
+        $('#vm-imp-bar .progress-bar').removeClass('active');
+        var s = j.stats;
+        status(fmt(T.done, [s.created, s.updated, s.local, s.remote, s.skipped, s.hidden]), 'success');
+        return;
+      }
+      status(fmt(T.progress, [j.done, j.total]));
+      step();
+    }).fail(function () { lock(false); $('#vm-imp-resume').show(); status(T.network, 'warning'); });
+  }
+
+  $('#vm-imp-go').on('click', function () {
+    var form = $('#vm-imp-form')[0];
+    if (!form.file.files.length) { form.file.focus(); return; }
+    lock(true); status(T.reading); bar(0);
+    $.ajax({ url: uploadUrl, type: 'post', data: new FormData(form), processData: false, contentType: false, dataType: 'json', timeout: 600000 })
+      .done(function (j) {
+        if (j.error) { lock(false); status(j.error, 'danger'); return; }
+        if (j.warning) { $('#vm-imp-status').after('<div class="alert alert-warning" style="max-width:720px">' + j.warning + '</div>'); }
+        status(fmt(T.progress, [0, j.total])); step();
+      })
+      .fail(function () { lock(false); status(T.network, 'warning'); });
+  });
+
+  $('#vm-imp-resume').on('click', function () { lock(true); step(); });
+})(jQuery);
+//--></script>
+{{ footer }}
