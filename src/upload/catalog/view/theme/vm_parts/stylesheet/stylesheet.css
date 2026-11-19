@@ -459,3 +459,9 @@ html.vm-noscroll,html.vm-noscroll body{overflow:hidden}
   .vm-flyout ul{columns:3;column-gap:22px}
   .vm-flyout li{font-size:13.5px;padding:3px 0}
 }
+
+/* 1.1.8: warehouses */
+.vm-wh{display:flex;flex-direction:column;gap:4px}
+.vm-wh-line{display:flex;align-items:baseline;gap:6px;font-size:13px}
+.vm-wh-line .vm-stock{font-size:13px;font-weight:700}
+.vm-wh-line small{color:var(--vm-muted);font-size:12px}

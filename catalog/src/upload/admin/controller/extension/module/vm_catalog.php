@@ -20,7 +20,9 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			'module_vm_catalog_status'     => 1,
 			'module_vm_catalog_supplier'   => 'utr',
 			'module_vm_catalog_local'      => 'Вінницька обл.',
-			'module_vm_catalog_days'       => 2,
+			'module_vm_catalog_days'       => 1,
+			'module_vm_catalog_site_local' => 'Склад Вінниця',
+			'module_vm_catalog_site_remote' => 'Інші склади',
 			'module_vm_catalog_markup'     => 30,
 			'module_vm_catalog_round'      => 0,
 			'module_vm_catalog_update_url' => self::DEFAULT_UPDATE_URL,
@@ -61,6 +63,15 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 
 		// tables appear on install; also on the first open after a module update
 		$this->model_extension_module_vm_catalog->install();
+
+		if ((string)$this->config->get('module_vm_catalog_site_local') === '') {
+			// 1.3.1: on-order delivery is 1 day; switch products already imported with the old 2-day status
+			$this->load->model('setting/setting');
+			$opt = $this->cleanOptions(array_merge($this->settings(), array('module_vm_catalog_days' => 1, 'module_vm_catalog_site_local' => 'Склад Вінниця', 'module_vm_catalog_site_remote' => 'Інші склади')));
+			$this->model_setting_setting->editSetting('module_vm_catalog', $opt);
+			$this->model_extension_module_vm_catalog->switchWaitStatus(2, 1);
+			$this->response->redirect($this->link());
+		}
 
 		$this->document->setTitle($this->language->get('heading_title'));
 
@@ -149,6 +160,8 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			'module_vm_catalog_supplier'   => $supplier !== '' ? substr($supplier, 0, 32) : 'price',
 			'module_vm_catalog_local'      => mb_substr($get('module_vm_catalog_local'), 0, 64),
 			'module_vm_catalog_days'       => max(1, min(60, (int)$get('module_vm_catalog_days'))),
+			'module_vm_catalog_site_local' => (isset($src['module_vm_catalog_site_local']) ? mb_substr($get('module_vm_catalog_site_local'), 0, 64) : (string)$this->config->get('module_vm_catalog_site_local')) ?: 'Склад Вінниця',
+			'module_vm_catalog_site_remote' => (isset($src['module_vm_catalog_site_remote']) ? mb_substr($get('module_vm_catalog_site_remote'), 0, 64) : (string)$this->config->get('module_vm_catalog_site_remote')) ?: 'Інші склади',
 			'module_vm_catalog_markup'     => max(-90, min(500, (float)str_replace(',', '.', $get('module_vm_catalog_markup')))),
 			'module_vm_catalog_round'      => in_array((int)$get('module_vm_catalog_round'), array(0, 2), true) ? (int)$get('module_vm_catalog_round') : 0,
 			'module_vm_catalog_update_url' => preg_match('#^https://#i', $get('module_vm_catalog_update_url')) ? $get('module_vm_catalog_update_url') : self::DEFAULT_UPDATE_URL,

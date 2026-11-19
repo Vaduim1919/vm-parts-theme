@@ -539,9 +539,27 @@ class ModelExtensionModuleVmCatalog extends Model {
 		return $this->memo['man'][$key] = $id;
 	}
 
-	private function stockStatusId($days) {
+	public function switchWaitStatus($from, $to) {
+		$old = $this->db->query("SELECT stock_status_id FROM `" . DB_PREFIX . "stock_status` WHERE name = '" . $this->db->escape($this->waitName($from)) . "' LIMIT 1");
+
+		if (!$old->num_rows) {
+			return 0;
+		}
+
+		$new = $this->stockStatusId($to);
+		$this->db->query("UPDATE `" . DB_PREFIX . "product` SET stock_status_id = '" . (int)$new . "' WHERE stock_status_id = '" . (int)$old->row['stock_status_id'] . "'");
+
+		return $this->db->countAffected();
+	}
+
+	private function waitName($days) {
 		$days = (int)$days;
-		$name = 'Під замовлення, ' . $days . ' ' . ($days == 1 ? 'день' : ($days >= 2 && $days <= 4 ? 'дні' : 'днів'));
+
+		return 'Під замовлення, ' . $days . ' ' . ($days == 1 ? 'день' : ($days >= 2 && $days <= 4 ? 'дні' : 'днів'));
+	}
+
+	private function stockStatusId($days) {
+		$name = $this->waitName($days);
 
 		if (isset($this->memo['ss'][$name])) {
 			return $this->memo['ss'][$name];

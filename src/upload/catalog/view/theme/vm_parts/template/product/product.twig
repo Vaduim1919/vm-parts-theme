@@ -37,7 +37,11 @@
               {% if price %}
               <div class="vm-pp-price">{% if not special %}<b>{{ price }}</b>{% else %}<s>{{ price }}</s> <b class="vm-price-new">{{ special }}</b>{% endif %}</div>
               {% endif %}
+              {% if vm_product.vm_stock_lines %}
+              <div class="vm-wh">{% for w in vm_product.vm_stock_lines %}<div class="vm-wh-line vm-wh-{{ w.class }}"><span class="vm-stock vm-stock-{{ w.class }}">{{ w.text }}</span> <small>{{ w.note }}</small></div>{% endfor %}</div>
+              {% else %}
               <span class="vm-stock vm-stock-{{ vm_product.vm_stock_class ? vm_product.vm_stock_class : 'in' }}">{{ stock }}</span>
+              {% endif %}
             </div>
             {% if price %}
             <ul class="list-unstyled vm-pp-extra">

@@ -304,6 +304,49 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		return self::$bestsellers;
 	}
 
+	// warehouses from the V&M Catalog module: own warehouse + supplier's other warehouses
+	private function warehouseStock($ids) {
+		static $has = null;
+
+		if ($has === null) {
+			$has = (bool)$this->db->query("SHOW TABLES LIKE '" . $this->db->escape(DB_PREFIX . 'vm_catalog_item') . "'")->num_rows;
+		}
+
+		$out = array();
+		$ids = array_filter(array_map('intval', $ids));
+
+		if (!$has || !$ids) {
+			return $out;
+		}
+
+		$q = $this->db->query("SELECT product_id, SUM(local_qty) AS l, SUM(remote_qty) AS r FROM `" . DB_PREFIX . "vm_catalog_item` WHERE product_id IN (" . implode(',', $ids) . ") GROUP BY product_id");
+
+		foreach ($q->rows as $row) {
+			$out[(int)$row['product_id']] = array((int)$row['l'], (int)$row['r']);
+		}
+
+		return $out;
+	}
+
+	private function warehouseLines($l, $r) {
+		$t = $this->texts();
+		$local = trim((string)$this->config->get('module_vm_catalog_site_local'));
+		$remote = trim((string)$this->config->get('module_vm_catalog_site_remote'));
+		$days = (int)$this->config->get('module_vm_catalog_days');
+		$days = $days > 0 ? $days : 1;
+		$lines = array();
+
+		if ($l > 0) {
+			$lines[] = array('class' => 'in', 'text' => ($local !== '' ? $local : $t['text_wh_local']), 'note' => sprintf($t['text_wh_qty'], $l >= 10 ? '10+' : $l));
+		}
+
+		if ($r > 0) {
+			$lines[] = array('class' => 'wait', 'text' => ($remote !== '' ? $remote : $t['text_wh_remote']), 'note' => sprintf($days == 1 ? $t['text_wh_day'] : $t['text_wh_days'], $days));
+		}
+
+		return $lines;
+	}
+
 	private function vmTablesExist() {
 		static $exists = null;
 
@@ -386,6 +429,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		$hits = $this->hitIds();
 		$t = $this->texts();
+		$wh = $this->warehouseStock(array_keys($rows));
 
 		foreach ($products as $k => $p) {
 			if (!is_array($p) || !isset($p['product_id'])) {
@@ -405,6 +449,14 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			$products[$k]['vm_model'] = $r['model'];
 			$products[$k]['vm_stock'] = $in_stock ? $t['text_in_stock'] : ($r['stock_status'] ? $r['stock_status'] : $t['text_out_stock']);
 			$products[$k]['vm_stock_class'] = $in_stock ? 'in' : 'wait';
+			$products[$k]['vm_stock_lines'] = array();
+
+			if (isset($wh[$id]) && ($wh[$id][0] > 0 || $wh[$id][1] > 0)) {
+				$lines = $this->warehouseLines($wh[$id][0], $wh[$id][1]);
+				$products[$k]['vm_stock_lines'] = $lines;
+				$products[$k]['vm_stock'] = $lines[0]['text'] . ($lines[0]['class'] === 'wait' ? ' · ' . $lines[0]['note'] : '');
+				$products[$k]['vm_stock_class'] = $lines[0]['class'];
+			}
 			$products[$k]['vm_new'] = (strtotime($r['date_added']) > time() - $new_days * 86400);
 			$products[$k]['vm_hit'] = isset($hits[$id]);
 			$products[$k]['vm_discount'] = '';
