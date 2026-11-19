@@ -176,7 +176,7 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			return $this->json(array('error' => $this->language->get('error_permission')));
 		}
 
-		$this->json($this->model_extension_module_vm_catalog->bmProbe());
+		$this->json($this->model_extension_module_vm_catalog->bmProbe(isset($this->request->get['q']) ? mb_substr(html_entity_decode($this->request->get['q'], ENT_QUOTES, 'UTF-8'), 0, 64) : ''));
 	}
 
 	public function utrProbe() {

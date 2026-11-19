@@ -1176,7 +1176,7 @@ class ModelExtensionModuleVmCatalog extends Model {
 		return null;
 	}
 
-	public function bmProbe() {
+	public function bmProbe($user_q = '') {
 		$out = array('steps' => array());
 		$add = function ($name, $r) use (&$out) {
 			$out['steps'][] = array(
@@ -1204,7 +1204,7 @@ class ModelExtensionModuleVmCatalog extends Model {
 		$tries = array();
 		$sample = $this->db->query("SELECT article FROM `" . DB_PREFIX . "vm_catalog_item` WHERE local_qty > 0 ORDER BY RAND() LIMIT 1")->row;
 
-		foreach (array_filter(array($sample ? $sample['article'] : '', '21819FL', 'OC90', '334834')) as $q) {
+		foreach (array_filter(array(trim($user_q), $sample ? $sample['article'] : '', '21819FL', 'ADM543123', 'OC90')) as $q) {
 			$tries[$q] = true;
 		}
 

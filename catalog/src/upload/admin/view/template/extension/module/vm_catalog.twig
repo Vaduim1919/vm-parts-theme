@@ -26,6 +26,7 @@
           <div class="form-group"><label class="col-sm-3 control-label">{{ entry_bm_token }}</label><div class="col-sm-6"><input type="password" name="module_vm_catalog_bm_token" value="" placeholder="{% if bm_token_set %}{{ text_utr_password_set }}{% endif %}" class="form-control" autocomplete="new-password"></div></div>
           <div class="form-group"><div class="col-sm-offset-3 col-sm-9">
             <button type="submit" class="btn btn-default"><i class="fa fa-save"></i> {{ button_save }}</button>
+            <input type="text" id="vm-bm-q" class="form-control" placeholder="{{ text_bm_q }}" style="display:inline-block;width:200px;vertical-align:middle">
             <button type="button" id="vm-bm-probe" class="btn btn-info"><i class="fa fa-stethoscope"></i> {{ button_utr_probe }}</button>
           </div></div>
         </form>
@@ -169,7 +170,7 @@
   $('#vm-bm-probe').on('click', function () {
     var b = $(this).prop('disabled', true), box = $('#vm-bm-result');
     box.html('<div class="alert alert-info">{{ text_bm_probing|e('js') }}</div>');
-    $.getJSON('{{ bm_probe_url|e('js') }}').done(function (j) {
+    $.getJSON('{{ bm_probe_url|e('js') }}', { q: $('#vm-bm-q').val() }).done(function (j) {
       if (j.error) { box.html('<div class="alert alert-danger">' + esc(j.error) + '</div>'); return; }
       var h = '<table class="table table-condensed table-bordered" style="font-size:12px"><tr><th style="width:28%">Що перевіряли</th><th>Код</th><th>Що повернуло</th></tr>';
       $.each(j.steps, function (i, r) {

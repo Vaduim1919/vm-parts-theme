@@ -1,7 +1,7 @@
 {
-  "version": "1.2.1",
+  "version": "1.2.2",
   "date": "2026-11-19",
-  "notes": "Детальніша перевірка BM Parts: кількість знайдених товарів, кілька артикулів, фільтр за маркою",
-  "zip": "releases/vm_catalog-1.2.1.ocmod.zip",
-  "sha256": "bdb05290bb2d7c6fa8a41386a987fa80b51db63a7b1a67e8eb38dd99d8ca1870"
+  "notes": "Перевірка BM Parts за довільним артикулом",
+  "zip": "releases/vm_catalog-1.2.2.ocmod.zip",
+  "sha256": "b44347c0fc8d66c61eea032a2618cbb94458495f97866c00f1730c022a0ea819"
 }
