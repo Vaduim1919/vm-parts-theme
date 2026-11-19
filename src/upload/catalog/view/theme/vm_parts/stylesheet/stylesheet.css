@@ -272,3 +272,7 @@ body.vm a:hover,body.vm a:focus{color:var(--vm-blue);text-decoration:none}
   .vm-home-main{width:100%;max-width:100%}
   .vm-home-main .swiper-viewport,.vm-home-main .swiper-container{max-width:100%;overflow:hidden}
 }
+/* 1.1.2: header dropdowns (cart, account, language/currency) above the catalog bar */
+.vm-topbar{position:relative;z-index:1030}
+.vm-header{position:relative;z-index:1020}
+.vm-header .dropdown-menu,.vm-topbar .dropdown-menu{z-index:1040}

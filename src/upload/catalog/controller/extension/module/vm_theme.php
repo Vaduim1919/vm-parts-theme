@@ -132,7 +132,9 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			'benefits'   => $benefits,
 			'head_code'  => html_entity_decode((string)$this->config->get('module_vm_theme_head_code'), ENT_QUOTES, 'UTF-8'),
 			'body_code'  => html_entity_decode((string)$this->config->get('module_vm_theme_body_code'), ENT_QUOTES, 'UTF-8'),
-			'year'       => date('Y')
+			'year'       => date('Y'),
+			// cache-busting for the stylesheet after theme updates
+			'version'    => is_file(DIR_TEMPLATE . 'vm_parts/VERSION') ? trim(file_get_contents(DIR_TEMPLATE . 'vm_parts/VERSION')) : '1'
 		);
 	}
 

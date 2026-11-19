@@ -14,7 +14,7 @@
 <link href="catalog/view/javascript/font-awesome/css/font-awesome.min.css" rel="stylesheet" type="text/css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link href="catalog/view/theme/vm_parts/stylesheet/stylesheet.css?v=1.0" rel="stylesheet">
+<link href="catalog/view/theme/vm_parts/stylesheet/stylesheet.css?v={{ vm.version }}" rel="stylesheet">
 {% for style in styles %}
 <link href="{{ style.href }}" type="text/css" rel="{{ style.rel }}" media="{{ style.media }}" />
 {% endfor %}
