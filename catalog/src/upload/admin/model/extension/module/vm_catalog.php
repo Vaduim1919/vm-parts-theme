@@ -1061,4 +1061,156 @@ class ModelExtensionModuleVmCatalog extends Model {
 
 		return array('file' => $file);
 	}
+
+
+	// ------------------------------------------------------------ BM Parts API
+
+	const BM_API = 'https://api.bm.parts/';
+
+	public function bm($method, $path, $query = array(), $body = null) {
+		$token = trim((string)$this->config->get('module_vm_catalog_bm_token'));
+
+		if ($token === '') {
+			return array('code' => 0, 'json' => null, 'error' => 'Вкажіть API-токен BM Parts і збережіть налаштування');
+		}
+
+		$url = self::BM_API . ltrim($path, '/');
+
+		if ($query) {
+			// repeated keys (cars=..&cars=..) are allowed
+			$parts = array();
+
+			foreach ($query as $k => $v) {
+				foreach ((array)$v as $one) {
+					$parts[] = rawurlencode($k) . '=' . rawurlencode($one);
+				}
+			}
+
+			$url .= '?' . implode('&', $parts);
+		}
+
+		$headers = array('Accept: application/json', 'Authorization: ' . $token, 'Accept-Language: uk');
+
+		$ch = curl_init($url);
+		$opt = array(
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_CUSTOMREQUEST  => $method,
+			CURLOPT_CONNECTTIMEOUT => 15,
+			CURLOPT_TIMEOUT        => 60,
+			CURLOPT_USERAGENT      => 'VM-Catalog vmautoparts.com.ua',
+			CURLOPT_SSL_VERIFYPEER => true
+		);
+
+		if ($body !== null) {
+			$headers[] = 'Content-Type: application/json';
+			$opt[CURLOPT_POSTFIELDS] = json_encode($body, JSON_UNESCAPED_UNICODE);
+		}
+
+		$opt[CURLOPT_HTTPHEADER] = $headers;
+		curl_setopt_array($ch, $opt);
+		$res = curl_exec($ch);
+		$code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+		$err = curl_error($ch);
+		curl_close($ch);
+
+		if ($res === false) {
+			return array('code' => 0, 'json' => null, 'error' => 'Немає зв\'язку з BM Parts: ' . $err);
+		}
+
+		return array('code' => $code, 'json' => json_decode($res, true), 'body' => $res);
+	}
+
+	// short description of a JSON value: keys and sizes, never the whole thing
+	private function shape($v, $depth = 0) {
+		if (is_array($v)) {
+			$assoc = array_keys($v) !== range(0, count($v) - 1);
+
+			if (!$assoc) {
+				return '[' . count($v) . ']' . ($v && $depth < 1 ? ' ' . $this->shape(reset($v), $depth + 1) : '');
+			}
+
+			if ($depth >= 2) {
+				return '{' . implode(', ', array_slice(array_keys($v), 0, 12)) . '}';
+			}
+
+			$out = array();
+
+			foreach ($v as $k => $x) {
+				$out[] = $k . (is_array($x) ? ': ' . $this->shape($x, $depth + 1) : '');
+			}
+
+			return '{' . implode(', ', $out) . '}';
+		}
+
+		return gettype($v);
+	}
+
+	private function firstProduct($json) {
+		if (!is_array($json)) {
+			return null;
+		}
+
+		foreach (array('products', 'data', 'items', 'result') as $k) {
+			if (!empty($json[$k]) && is_array($json[$k])) {
+				$list = $json[$k];
+				$first = reset($list);
+
+				return is_array($first) ? array(key($list), $first) : null;
+			}
+		}
+
+		return null;
+	}
+
+	public function bmProbe() {
+		$out = array('steps' => array());
+		$add = function ($name, $r, $note = '') use (&$out) {
+			$out['steps'][] = array(
+				'name'  => $name,
+				'code'  => $r['code'],
+				'error' => isset($r['error']) ? $r['error'] : (isset($r['json']['message']) ? (is_string($r['json']['message']) ? $r['json']['message'] : json_encode($r['json']['message'], JSON_UNESCAPED_UNICODE)) : ''),
+				'shape' => isset($r['json']) && $r['code'] == 200 ? mb_substr($this->shape($r['json']), 0, 1500) : '',
+				'note'  => $note
+			);
+		};
+
+		$r = $this->bm('GET', 'catalog/cars/brands/');
+		$add('Марки авто (catalog/cars/brands)', $r);
+
+		if ($r['code'] == 0 || $r['code'] == 401 || $r['code'] == 403) {
+			return $out;
+		}
+
+		$sample = $this->db->query("SELECT article, brand FROM `" . DB_PREFIX . "vm_catalog_item` WHERE local_qty > 0 ORDER BY RAND() LIMIT 1")->row;
+		$q = $sample ? $sample['article'] : '21819FL';
+
+		$r = $this->bm('GET', 'search/products', array('q' => $q, 'products_as' => 'obj', 'per_page' => 5));
+		$add('Пошук за артикулом ' . $q . ' (search/products)', $r);
+
+		$first = $this->firstProduct(isset($r['json']) ? $r['json'] : null);
+		$uuid = '';
+
+		if ($first) {
+			$uuid = isset($first[1]['uuid']) ? $first[1]['uuid'] : (is_string($first[0]) && strlen($first[0]) > 20 ? $first[0] : '');
+		}
+
+		if ($uuid) {
+			$r = $this->bm('GET', 'product/' . rawurlencode($uuid), array('products_as' => 'obj', 'oe' => 'short', 'output_field' => 'all', 'with_extra' => 'true'));
+			$add('Картка товару (product/{uuid})', $r);
+
+			$r = $this->bm('GET', 'product/' . rawurlencode($uuid) . '/images');
+			$add('Фото товару (product/{uuid}/images)', $r);
+
+			$r = $this->bm('GET', 'product/' . rawurlencode($uuid) . '/in_stocks');
+			$add('Залишки по складах (product/{uuid}/in_stocks)', $r);
+		}
+
+		$r = $this->bm('GET', 'search/products/aggregations/cars', array('q' => $q));
+		$add('До яких авто підходить (aggregations/cars, q=' . $q . ')', $r);
+
+		$r = $this->bm('GET', 'search/products', array('q' => 'амортизатор', 'cars' => 'VOLKSWAGEN>PASSAT', 'products_as' => 'obj', 'per_page' => 3));
+		$add('Пошук з фільтром авто (cars=VOLKSWAGEN>PASSAT)', $r);
+
+		return $out;
+	}
 }

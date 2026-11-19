@@ -25,7 +25,8 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			'module_vm_catalog_round'      => 0,
 			'module_vm_catalog_update_url' => self::DEFAULT_UPDATE_URL,
 			'module_vm_catalog_utr_email'  => '',
-			'module_vm_catalog_utr_password' => ''
+			'module_vm_catalog_utr_password' => '',
+			'module_vm_catalog_bm_token'   => ''
 		);
 	}
 
@@ -86,6 +87,9 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		$data['utr_password_set'] = (string)$this->config->get('module_vm_catalog_utr_password') !== '';
 		$data['module_vm_catalog_utr_password'] = '';
 		$data['utr_save'] = $this->link('saveUtr');
+		$data['bm_token_set'] = (string)$this->config->get('module_vm_catalog_bm_token') !== '';
+		$data['module_vm_catalog_bm_token'] = '';
+		$data['bm_probe_url'] = $this->ajaxUrl('bmProbe');
 		$data['utr_probe_url'] = $this->ajaxUrl('utrProbe');
 		$data['utr_price_url'] = $this->ajaxUrl('utrPrice');
 		$data['upload_url'] = $this->ajaxUrl('upload');
@@ -126,7 +130,8 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			'module_vm_catalog_update_url' => preg_match('#^https://#i', $get('module_vm_catalog_update_url')) ? $get('module_vm_catalog_update_url') : self::DEFAULT_UPDATE_URL,
 			'module_vm_catalog_utr_email'  => isset($src['module_vm_catalog_utr_email']) ? mb_substr($get('module_vm_catalog_utr_email'), 0, 128) : (string)$this->config->get('module_vm_catalog_utr_email'),
 			// empty password field = keep the saved one
-			'module_vm_catalog_utr_password' => !empty($src['module_vm_catalog_utr_password']) ? $get('module_vm_catalog_utr_password') : (string)$this->config->get('module_vm_catalog_utr_password')
+			'module_vm_catalog_utr_password' => !empty($src['module_vm_catalog_utr_password']) ? $get('module_vm_catalog_utr_password') : (string)$this->config->get('module_vm_catalog_utr_password'),
+			'module_vm_catalog_bm_token'   => !empty($src['module_vm_catalog_bm_token']) ? trim($get('module_vm_catalog_bm_token')) : (string)$this->config->get('module_vm_catalog_bm_token')
 		);
 	}
 
@@ -161,6 +166,17 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		}
 
 		$this->response->redirect($this->link());
+	}
+
+	public function bmProbe() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify()) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$this->json($this->model_extension_module_vm_catalog->bmProbe());
 	}
 
 	public function utrProbe() {

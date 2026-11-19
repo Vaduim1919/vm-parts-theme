@@ -17,6 +17,22 @@
     </div>
     {% endif %}
 
+    <!-- BM Parts API -->
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-plug"></i> {{ text_bm_title }}</h3></div>
+      <div class="panel-body">
+        <p>{{ text_bm_help }}</p>
+        <form action="{{ utr_save }}" method="post" class="form-horizontal" autocomplete="off">
+          <div class="form-group"><label class="col-sm-3 control-label">{{ entry_bm_token }}</label><div class="col-sm-6"><input type="password" name="module_vm_catalog_bm_token" value="" placeholder="{% if bm_token_set %}{{ text_utr_password_set }}{% endif %}" class="form-control" autocomplete="new-password"></div></div>
+          <div class="form-group"><div class="col-sm-offset-3 col-sm-9">
+            <button type="submit" class="btn btn-default"><i class="fa fa-save"></i> {{ button_save }}</button>
+            <button type="button" id="vm-bm-probe" class="btn btn-info"><i class="fa fa-stethoscope"></i> {{ button_utr_probe }}</button>
+          </div></div>
+        </form>
+        <div id="vm-bm-result" style="max-width:1000px"></div>
+      </div>
+    </div>
+
     <!-- UTR API -->
     <div class="panel panel-default">
       <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-plug"></i> {{ text_utr_title }}</h3></div>
@@ -148,6 +164,21 @@
 
   $('#vm-imp-resume').on('click', function () { lock(true); step(); });
 
+
+  // ---- BM Parts
+  $('#vm-bm-probe').on('click', function () {
+    var b = $(this).prop('disabled', true), box = $('#vm-bm-result');
+    box.html('<div class="alert alert-info">{{ text_bm_probing|e('js') }}</div>');
+    $.getJSON('{{ bm_probe_url|e('js') }}').done(function (j) {
+      if (j.error) { box.html('<div class="alert alert-danger">' + esc(j.error) + '</div>'); return; }
+      var h = '<table class="table table-condensed table-bordered" style="font-size:12px"><tr><th style="width:28%">Що перевіряли</th><th>Код</th><th>Що повернуло</th></tr>';
+      $.each(j.steps, function (i, r) {
+        h += '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.code) + '</td><td style="word-break:break-word">' + (r.error ? '<span class="text-danger">' + esc(r.error) + '</span> ' : '') + '<code style="white-space:pre-wrap">' + esc(r.shape) + '</code></td></tr>';
+      });
+      box.html(h + '</table>');
+    }).fail(function (x) { box.html('<div class="alert alert-warning">{{ text_probe_fail|e('js') }}<br><small>' + esc((x.responseText || '').slice(0, 300)) + '</small></div>'); }).always(function () { b.prop('disabled', false); });
+  });
+
   // ---- UTR
   var utrProbeUrl = '{{ utr_probe_url|e('js') }}', utrPriceUrl = '{{ utr_price_url|e('js') }}';
   function utrMsg(html, cls) { $('#vm-utr-result').html('<div class="alert alert-' + (cls || 'info') + '">' + html + '</div>'); }
@@ -163,7 +194,7 @@
         h += '<tr><td>' + esc(r.article) + '</td><td>' + esc(r.brand) + '</td><td>' + esc(r.search) + '</td><td>' + esc(r.title) + '<br><small>' + esc(r.category) + '</small></td><td>' + esc(r.storages) + '</td><td>' + esc(r.applicability) + '</td><td>' + esc(r.analogs) + '</td><td><small>' + esc(r.extra) + '</small></td></tr>';
       });
       utrMsg(h + '</table><p class="text-muted">{{ text_utr_codes|e('js') }}</p>', 'info');
-    }).fail(function () { utrMsg(T.network, 'warning'); }).always(function () { b.prop('disabled', false); });
+    }).fail(function (x) { utrMsg('{{ text_probe_fail|e('js') }}<br><small>' + esc((x.responseText || '').slice(0, 300)) + '</small>', 'warning'); }).always(function () { b.prop('disabled', false); });
   });
 
   $('#vm-utr-price').on('click', function () {
