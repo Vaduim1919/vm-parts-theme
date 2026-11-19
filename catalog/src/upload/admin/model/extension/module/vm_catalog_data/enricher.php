@@ -675,6 +675,45 @@ class VmCatalogEnricher {
 		return $r;
 	}
 
+	// for support: tries one photo of a found product and reports every step
+	public function photoTest() {
+		$out = array();
+		$out[] = 'mode=' . $this->setting('bm_photos', 'local') . ' pattern=' . $this->setting('bm_img_pattern', '-') . ' last_error=' . $this->setting('bm_img_error', '-');
+		$out[] = 'DIR_IMAGE=' . DIR_IMAGE . ' writable=' . (is_writable(DIR_IMAGE . 'catalog/') ? 'yes' : 'NO');
+		$row = $this->db->query("SELECT e.product_id, e.ext_id, e.images, p.image, MAX(i.local_qty) AS lq FROM `" . DB_PREFIX . "vm_catalog_enrich` e JOIN `" . DB_PREFIX . "product` p ON (p.product_id = e.product_id) LEFT JOIN `" . DB_PREFIX . "vm_catalog_item` i ON (i.product_id = e.product_id) WHERE e.status = 1 AND e.ext_id <> '' GROUP BY e.product_id ORDER BY (p.image = '') DESC, MAX(i.local_qty) DESC LIMIT 1")->row;
+
+		if (!$row) {
+			return implode("\n", array_merge($out, array('no found products yet')));
+		}
+
+		$out[] = 'product=' . $row['product_id'] . ' uuid=' . $row['ext_id'] . ' enrich.images=' . $row['images'] . ' product.image="' . $row['image'] . '" local_qty=' . $row['lq'];
+		$r = $this->bm('GET', 'product/' . rawurlencode($row['ext_id']) . '/images');
+		$out[] = 'GET product/{uuid}/images -> ' . $r['code'] . ' ' . mb_substr(json_encode($r['json'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 0, 300);
+		$imgs = isset($r['json']['images']) ? (array)$r['json']['images'] : array();
+
+		if ($imgs) {
+			$first = is_string($imgs[0]) ? $imgs[0] : json_encode($imgs[0]);
+			$out[] = 'first image raw: ' . $first;
+			$tmp = DIR_CACHE . 'vm_photo_test.img';
+
+			foreach ($this->imageUrls(is_string($imgs[0]) ? $imgs[0] : '') as $i => $url) {
+				$ok = $this->download($url, $tmp);
+				$out[] = 'try #' . $i . ' ' . $url . ' -> ' . ($ok ? 'OK ' . filesize($tmp) . ' bytes' : 'FAIL ' . $this->imgError);
+				@unlink($tmp);
+
+				if ($ok) {
+					// downloads work now: let the backfill retry products whose photo failed before
+					$this->db->query("UPDATE `" . DB_PREFIX . "vm_catalog_enrich` SET images = 0 WHERE images < 0");
+					$this->saveSetting('bm_img_pattern', (string)$i);
+					$out[] = 'reset failed photos for retry';
+					break;
+				}
+			}
+		}
+
+		return implode("\n", $out);
+	}
+
 	public function sample() {
 		return $this->db->query("SELECT e.product_id, e.ext_id, e.node, e.cars_json, pd.name FROM `" . DB_PREFIX . "vm_catalog_enrich` e LEFT JOIN `" . DB_PREFIX . "product_description` pd ON (pd.product_id = e.product_id AND pd.language_id = '" . (int)$this->config->get('config_language_id') . "') WHERE e.status = 1 AND e.cars > 0 ORDER BY e.date_checked DESC LIMIT 1")->row;
 	}
