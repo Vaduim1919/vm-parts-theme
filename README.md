@@ -21,3 +21,8 @@
 - `tools/release.sh 1.1.1 "Що нового"` — збирає `releases/vm_parts-1.1.1.ocmod.zip` і оновлює `latest.json`.
 - `tools/gen_lists.py`, `tools/gen_product.py` — генерують шаблони списків товарів і сторінки товару з шаблонів default
   (в OpenCart 3.0.4 Twig не підтримує `include`, тому картка товару вбудована в кожен шаблон).
+
+
+## Модуль «V&M Каталог»
+
+Категорії та імпорт прайсів постачальників. Джерело: `catalog/src/upload`, релізи: `catalog/releases`, маніфест оновлень: `catalog/latest.json`. Випуск: `tools/release-catalog.sh <версія> "що нового"`.

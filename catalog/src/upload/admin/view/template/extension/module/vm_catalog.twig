@@ -92,7 +92,7 @@
   var uploadUrl = '{{ upload_url|e('js') }}', stepUrl = '{{ step_url|e('js') }}';
   var T = {
     reading: '{{ text_reading|e('js') }}', progress: '{{ text_progress|e('js') }}',
-    done: '{{ text_imp_done|e('js') }}', network: '{{ text_network|e('js') }}'
+    done: '{{ text_imp_done|e('js') }}', countOff: '{{ text_count_off|e('js') }}', network: '{{ text_network|e('js') }}'
   };
   function fmt(s, a) { var i = 0; return s.replace(/%s/g, function () { return a[i++]; }); }
   function status(html, cls) { $('#vm-imp-status').html('<div class="alert alert-' + (cls || 'info') + '">' + html + '</div>'); }
@@ -107,7 +107,7 @@
         lock(false); $('#vm-imp-resume').hide();
         $('#vm-imp-bar .progress-bar').removeClass('active');
         var s = j.stats;
-        status(fmt(T.done, [s.created, s.updated, s.local, s.remote, s.skipped, s.hidden]), 'success');
+        status(fmt(T.done, [s.created, s.updated, s.local, s.remote, s.skipped, s.hidden]) + (s.count_off ? '<br>' + T.countOff : ''), 'success');
         return;
       }
       status(fmt(T.progress, [j.done, j.total]));

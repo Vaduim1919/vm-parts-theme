@@ -92,6 +92,7 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		$data['cancel'] = $this->url->link('marketplace/extension', 'user_token=' . $this->session->data['user_token'] . '&type=module', true);
 
 		$data['upload_max'] = ini_get('upload_max_filesize');
+		$data['text_count_off_js'] = $this->language->get('text_count_off');
 
 		$data['header'] = $this->load->controller('common/header');
 		$data['column_left'] = $this->load->controller('common/column_left');

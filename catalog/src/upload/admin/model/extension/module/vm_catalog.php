@@ -100,8 +100,8 @@ class ModelExtensionModuleVmCatalog extends Model {
 		return trim($text, '-');
 	}
 
-	private function uniqueKeyword($base) {
-		$base = $base !== '' ? substr($base, 0, 60) : 'category';
+	private function uniqueKeyword($base, $max = 60) {
+		$base = $base !== '' ? rtrim(substr($base, 0, $max), '-') : 'category';
 		$kw = $base;
 		$i = 2;
 
@@ -629,6 +629,8 @@ class ModelExtensionModuleVmCatalog extends Model {
 
 	private function productName($name, $brand, $article) {
 		$name = trim(preg_replace('/\s+/u', ' ', str_replace("\xC2\xA0", ' ', $name)));
+		// supplier noise: "_Амортизатор", "(1шт) Амортизатор", "*Фільтр"
+		$name = preg_replace('/^(?:[_*.\-\s]+|\(\s*\d+\s*шт\.?\s*\)\s*)+/u', '', $name);
 		$first = mb_strtolower(strtok($brand, ' '), 'UTF-8');
 
 		// "sato пружина" -> "пружина"; "компресор кондиціонера sato tech" -> "компресор кондиціонера"
@@ -726,7 +728,7 @@ class ModelExtensionModuleVmCatalog extends Model {
 
 			if (!$product_id) {
 				// a product added by hand earlier with the same article (and brand)
-				$q = $this->db->query("SELECT product_id FROM `" . DB_PREFIX . "product` WHERE (model = '" . $this->db->escape($article) . "' OR sku = '" . $this->db->escape($article) . "') AND (manufacturer_id = '" . (int)$man_id . "' OR manufacturer_id = 0) ORDER BY manufacturer_id DESC LIMIT 1");
+				$q = $this->db->query("SELECT product_id FROM `" . DB_PREFIX . "product` WHERE model = '" . $this->db->escape($article) . "' AND (manufacturer_id = '" . (int)$man_id . "' OR manufacturer_id = 0) ORDER BY manufacturer_id DESC LIMIT 1");
 				$product_id = $q->num_rows ? (int)$q->row['product_id'] : 0;
 			}
 
@@ -746,11 +748,18 @@ class ModelExtensionModuleVmCatalog extends Model {
 				$this->db->query("INSERT INTO `" . DB_PREFIX . "product` SET model = '" . $this->db->escape(mb_substr($article, 0, 64)) . "', sku = '" . $this->db->escape(mb_substr($article, 0, 64)) . "', upc = '', ean = '', jan = '', isbn = '', mpn = '" . $this->db->escape(mb_substr($article, 0, 64)) . "', location = '', quantity = '" . (int)$qty . "', minimum = 1, subtract = 1, stock_status_id = '" . (int)$status_id . "', date_available = CURDATE(), manufacturer_id = '" . (int)$man_id . "', shipping = 1, price = '" . (float)$sell . "', points = 0, weight = 0, weight_class_id = '" . (int)$this->config->get('config_weight_class_id') . "', length = 0, width = 0, height = 0, length_class_id = '" . (int)$this->config->get('config_length_class_id') . "', status = 1, tax_class_id = 0, sort_order = 0, image = '', date_added = NOW(), date_modified = NOW()");
 				$product_id = (int)$this->db->getLastId();
 
-				$slug = $this->slug($title);
+				// short name + brand + article: readable and practically unique
+				$head = $this->slug(trim(str_ireplace(array($brand, $article), '', $title)));
+
+				if (strlen($head) > 50) {
+					$head = substr($head, 0, strrpos(substr($head, 0, 50), '-') ?: 50);
+				}
+
+				$slug = trim($head . '-' . $this->slug($brand) . '-' . $this->slug($article), '-');
 
 				foreach ($this->languages() as $i => $l) {
 					$this->db->query("INSERT INTO `" . DB_PREFIX . "product_description` SET product_id = '" . $product_id . "', language_id = '" . (int)$l['language_id'] . "', name = '" . $this->db->escape($title) . "', description = '', tag = '', meta_title = '" . $this->db->escape(mb_substr($title . ' — купити', 0, 255)) . "', meta_description = '" . $this->db->escape(mb_substr($title . ': ціна, наявність, доставка по Україні.', 0, 255)) . "', meta_keyword = ''");
-					$kw = $this->uniqueKeyword($slug . ($i ? '-' . $l['code'] : ''));
+					$kw = $this->uniqueKeyword($slug . ($i ? '-' . $l['code'] : ''), 120);
 					$this->db->query("INSERT INTO `" . DB_PREFIX . "seo_url` SET store_id = 0, language_id = '" . (int)$l['language_id'] . "', query = 'product_id=" . $product_id . "', keyword = '" . $this->db->escape($kw) . "'");
 				}
 
@@ -793,6 +802,15 @@ class ModelExtensionModuleVmCatalog extends Model {
 		$this->db->query("UPDATE `" . DB_PREFIX . "vm_catalog_item` SET local_qty = 0, remote_qty = 0 WHERE supplier = '" . $supplier . "' AND date_seen < '" . $this->db->escape($job['started']) . "'");
 
 		$job['stats']['hidden'] = $old->num_rows;
+
+		// "show product count next to categories" makes every page count tens of thousands of
+		// products per category: with a big price list that takes minutes. Turn it off.
+		$job['stats']['count_off'] = 0;
+
+		if ((int)$this->config->get('config_product_count')) {
+			$this->db->query("UPDATE `" . DB_PREFIX . "setting` SET value = '0' WHERE store_id = 0 AND `key` = 'config_product_count'");
+			$job['stats']['count_off'] = 1;
+		}
 		$job['finished'] = true;
 
 		$this->cache->delete('product');
