@@ -309,6 +309,19 @@
       {{ content_bottom }}</div>
     {{ column_right }}</div>
 </div>
+{% if price %}
+<div class="vm-buybar" id="vm-buybar" aria-hidden="true">
+  <div class="vm-buybar-price">{% if special %}<s>{{ price }}</s><b class="vm-price-new">{{ special }}</b>{% else %}<b>{{ price }}</b>{% endif %}</div>
+  <button type="button" class="vm-buy" onclick="document.getElementById('button-cart').click();"><i class="fa fa-shopping-cart"></i> {{ vm_t.text_buy }}</button>
+</div>
+<script>
+(function(){
+  var btn=document.getElementById('button-cart'),bar=document.getElementById('vm-buybar');
+  if(!btn||!bar||!('IntersectionObserver' in window))return;
+  new IntersectionObserver(function(es){var v=es[0].isIntersecting;bar.classList.toggle('is-visible',!v);document.body.classList.toggle('vm-has-buybar',!v);},{threshold:0}).observe(btn);
+})();
+</script>
+{% endif %}
 <script type="text/javascript"><!--
 $('select[name=\'recurring_id\'], input[name="quantity"]').change(function(){
 	$.ajax({

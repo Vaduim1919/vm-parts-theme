@@ -36,3 +36,7 @@ $_['text_qty']          = 'Количество';
 $_['text_menu']         = 'Меню';
 $_['text_payments']     = 'Visa · Mastercard · Приват24 · Наложенный платёж';
 $_['text_need_help']    = 'Нужна помощь с подбором?';
+$_['text_home']         = 'Главная';
+$_['text_search_btn']   = 'Поиск';
+$_['text_chat']         = 'Чат';
+$_['text_sale']         = 'Акции';

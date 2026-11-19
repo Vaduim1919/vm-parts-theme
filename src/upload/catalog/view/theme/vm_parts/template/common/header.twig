@@ -47,7 +47,7 @@
 </div>
 <header class="vm-header">
   <div class="container vm-row vm-header-row">
-    <button type="button" class="vm-burger" aria-label="{{ vm_t.text_menu }}" data-toggle="collapse" data-target="#vm-mobile-menu"><i class="fa fa-bars"></i></button>
+    <button type="button" class="vm-burger" aria-label="{{ vm_t.text_menu }}" onclick="vmDrawer(true)"><i class="fa fa-bars"></i></button>
     <div id="logo" class="vm-logo">{% if logo %}<a href="{{ home }}"><img src="{{ logo }}" title="{{ name }}" alt="{{ name }}" /></a>{% else %}<a href="{{ home }}" class="vm-logo-text">{{ name }}</a>{% endif %}</div>
     <div class="vm-phones">
       {% if vm.phone %}<a class="vm-phone" href="{{ vm.phone_href }}">{{ vm.phone }}</a>{% endif %}
@@ -102,10 +102,48 @@
     </nav>
   </div>
 </div>
-<div id="vm-mobile-menu" class="collapse vm-mobile-menu">
-  <div class="container">
-    {% for cat in vm_menu %}<a href="{{ cat.href }}">{{ cat.name }}</a>{% endfor %}
-    {% for info in vm_infos %}<a href="{{ info.href }}" class="vm-mm-info">{{ info.title }}</a>{% endfor %}
-    <a href="{{ vm_contact }}" class="vm-mm-info">{{ vm_t.text_contacts }}</a>
+<div class="vm-drawer-overlay" id="vm-drawer-overlay" onclick="vmDrawer(false)"></div>
+<aside class="vm-drawer" id="vm-drawer" aria-label="{{ vm_t.text_menu }}" aria-hidden="true">
+  <div class="vm-drawer-head">
+    <div class="vm-drawer-logo">{% if logo %}<img src="{{ logo }}" alt="{{ name }}" />{% else %}{{ name }}{% endif %}</div>
+    <button type="button" class="vm-drawer-close" aria-label="Закрити" onclick="vmDrawer(false)"><i class="fa fa-times"></i></button>
   </div>
-</div>
+  <div class="vm-drawer-body">
+    <div class="vm-drawer-title">{{ vm_t.text_catalog }}</div>
+    <ul class="vm-drawer-cats">
+      {% for cat in vm_menu %}
+      <li>
+        {% if cat.children %}
+        <button type="button" class="vm-drawer-cat" onclick="this.parentNode.classList.toggle('is-open')">{{ cat.name }}<i class="fa fa-angle-down"></i></button>
+        <ul class="vm-drawer-sub">
+          <li><a href="{{ cat.href }}"><b>{{ vm_t.text_all }}</b></a></li>
+          {% for child in cat.children %}<li><a href="{{ child.href }}">{{ child.name }}</a></li>{% endfor %}
+        </ul>
+        {% else %}
+        <a href="{{ cat.href }}" class="vm-drawer-cat">{{ cat.name }}</a>
+        {% endif %}
+      </li>
+      {% endfor %}
+      <li><a href="{{ vm_special }}" class="vm-drawer-cat vm-drawer-sale">% {{ vm_t.text_sale }}</a></li>
+    </ul>
+    <div class="vm-drawer-title">{{ vm_t.text_cabinet }}</div>
+    <div class="vm-drawer-links">
+      {% if logged %}<a href="{{ account }}"><i class="fa fa-user-o"></i> {{ text_account }}</a><a href="{{ order }}"><i class="fa fa-list-alt"></i> {{ text_order }}</a>{% else %}<a href="{{ login }}"><i class="fa fa-sign-in"></i> {{ text_login }}</a><a href="{{ register }}"><i class="fa fa-user-plus"></i> {{ text_register }}</a>{% endif %}
+      <a href="{{ wishlist }}"><i class="fa fa-heart-o"></i> {{ vm_t.text_wishlist }}</a>
+    </div>
+    <div class="vm-drawer-title">{{ vm_t.text_buyers }}</div>
+    <div class="vm-drawer-links">
+      {% for info in vm_infos %}<a href="{{ info.href }}">{{ info.title }}</a>{% endfor %}
+      <a href="{{ vm_contact }}">{{ vm_t.text_contacts }}</a>
+    </div>
+    <div class="vm-drawer-contacts">
+      {% if vm.phone %}<a class="vm-drawer-phone" href="{{ vm.phone_href }}"><i class="fa fa-phone"></i> {{ vm.phone }}</a>{% endif %}
+      {% if vm.phone2 %}<a class="vm-drawer-phone" href="{{ vm.phone2_href }}"><i class="fa fa-phone"></i> {{ vm.phone2 }}</a>{% endif %}
+      {% if vm.hours %}<div class="vm-drawer-hours">{{ vm.hours }}</div>{% endif %}
+      <div class="vm-help-btns">
+        {% if vm.viber %}<a href="{{ vm.viber }}" class="vm-help-btn vm-help-viber"><i class="fa fa-phone"></i> Viber</a>{% endif %}
+        {% if vm.telegram %}<a href="{{ vm.telegram }}" class="vm-help-btn vm-help-tg" target="_blank" rel="noopener"><i class="fa fa-paper-plane"></i> Telegram</a>{% endif %}
+      </div>
+    </div>
+  </div>
+</aside>

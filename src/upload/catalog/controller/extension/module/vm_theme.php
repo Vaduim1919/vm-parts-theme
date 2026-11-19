@@ -13,6 +13,22 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		return '';
 	}
 
+	private function cartCount() {
+		$count = (int)$this->cart->countProducts();
+
+		if (!empty($this->session->data['vouchers'])) {
+			$count += count($this->session->data['vouchers']);
+		}
+
+		return $count;
+	}
+
+	// AJAX: number of items in the cart for the mobile bottom bar
+	public function count() {
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode(array('count' => $this->cartCount())));
+	}
+
 	private function active() {
 		if (!$this->config->get('module_vm_theme_status')) {
 			return false;
@@ -52,6 +68,9 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				break;
 			case 'common/footer':
 				$data['vm_menu'] = $this->menu();
+				$data['vm_home'] = $this->url->link('common/home');
+				$data['vm_cart_link'] = $this->url->link('checkout/cart');
+				$data['vm_cart_count'] = $this->cartCount();
 				$data['telephone'] = $this->config->get('config_telephone');
 				$data['vm_address'] = nl2br($this->config->get('config_address'));
 				$data['vm_open'] = nl2br($this->config->get('config_open'));
