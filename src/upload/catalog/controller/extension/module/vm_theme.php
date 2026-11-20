@@ -72,6 +72,43 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$this->response->setOutput(json_encode(array('count' => $this->cartCount())));
 	}
 
+	// AJAX: cart summary and wishlist ids for the add-to-cart popup and the hearts
+	public function state() {
+		$total = 0;
+
+		foreach ($this->cart->getProducts() as $product) {
+			$total += $this->tax->calculate($product['price'], $product['tax_class_id'], $this->config->get('config_tax')) * $product['quantity'];
+		}
+
+		if (!empty($this->session->data['vouchers'])) {
+			foreach ($this->session->data['vouchers'] as $voucher) {
+				$total += $voucher['amount'];
+			}
+		}
+
+		$wishlist = array();
+
+		if ($this->customer->isLogged()) {
+			$this->load->model('account/wishlist');
+
+			foreach ($this->model_account_wishlist->getWishlist() as $row) {
+				$wishlist[] = (int)$row['product_id'];
+			}
+		} elseif (!empty($this->session->data['wishlist']) && is_array($this->session->data['wishlist'])) {
+			foreach ($this->session->data['wishlist'] as $id) {
+				$wishlist[] = (int)$id;
+			}
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode(array(
+			'count'    => $this->cartCount(),
+			'total'    => $this->currency->format($total, $this->session->data['currency']),
+			'wishlist' => array_values(array_unique($wishlist)),
+			'logged'   => $this->customer->isLogged() ? 1 : 0
+		)));
+	}
+
 	private function active() {
 		if (!$this->config->get('module_vm_theme_status')) {
 			return false;
@@ -112,6 +149,22 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				$data['vm_home'] = $this->url->link('common/home');
 				$data['vm_cart_link'] = $this->url->link('checkout/cart');
 				$data['vm_cart_count'] = $this->cartCount();
+				$t = $this->texts();
+				$data['vm_js'] = json_encode(array(
+					'added'    => $t['text_pop_added'],
+					'incart'   => $t['text_pop_incart'],
+					'cont'     => $t['text_pop_continue'],
+					'checkout' => $t['text_pop_checkout'],
+					'qty'      => $t['text_pop_qty'],
+					'fav_add'  => $t['text_fav_added'],
+					'fav_has'  => $t['text_fav_has'],
+					'fav_open' => $t['text_fav_open'],
+					'fav_login'=> $t['text_fav_login'],
+					'cart'     => $this->url->link('checkout/cart'),
+					'checkout_url' => $this->url->link('checkout/checkout', '', true),
+					'wishlist' => $this->url->link('account/wishlist', '', true),
+					'login'    => $this->url->link('account/login', '', true)
+				), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 				$this->header($data);
 				break;
 			case 'common/home':

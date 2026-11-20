@@ -731,3 +731,53 @@ html.vm-noscroll,html.vm-noscroll body{overflow:hidden}
 @media (hover:none),(max-width:767px){
   .vm .swiper-viewport .swiper-button-prev,.vm .swiper-viewport .swiper-button-next{opacity:.92;width:34px;height:34px;margin-top:-17px}
 }
+
+/* ---------- 1.2.2 add-to-cart popup, wishlist hearts ---------- */
+.vm-pop{position:fixed;inset:0;z-index:10050;background:rgba(17,28,40,.55);display:flex;align-items:center;justify-content:center;padding:16px;opacity:0;transition:opacity .2s}
+.vm-pop.is-open{opacity:1}
+.vm-pop-box{position:relative;background:#fff;border-radius:14px;width:100%;max-width:460px;padding:22px 22px 20px;box-shadow:0 20px 60px rgba(0,0,0,.25);transform:translateY(16px) scale(.97);transition:transform .2s}
+.vm-pop.is-open .vm-pop-box{transform:none}
+.vm-pop-x{position:absolute;top:10px;right:12px;border:0;background:none;font-size:26px;line-height:1;color:var(--vm-light);padding:4px}
+.vm-pop-x:hover{color:var(--vm-text)}
+.vm-pop-head{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700;color:var(--vm-text);margin:0 26px 16px 0}
+.vm-pop-ok{flex:0 0 32px;height:32px;border-radius:50%;background:var(--vm-green-soft);color:var(--vm-green);display:flex;align-items:center;justify-content:center;font-size:15px}
+.vm-pop-item{display:flex;gap:14px;align-items:center;padding:12px;border:1px solid var(--vm-line);border-radius:10px;background:var(--vm-bg)}
+.vm-pop-item img{width:72px;height:72px;object-fit:contain;background:#fff;border-radius:8px;flex:0 0 72px}
+.vm-pop-name{font-weight:500;line-height:1.3;margin-bottom:6px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.vm-pop-meta{display:flex;gap:14px;align-items:baseline;color:var(--vm-muted);font-size:13px}
+.vm-pop-meta b{font-size:17px;color:var(--vm-text)}
+.vm-pop-sum{margin:12px 2px 16px;color:var(--vm-muted);font-size:13px;min-height:18px}
+.vm-pop-btns{display:flex;gap:10px}
+.vm-pop-btns>*{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;height:46px;border-radius:10px;font-weight:700;font-size:14px;text-align:center}
+.vm-pop-cont{border:1px solid var(--vm-line2);background:#fff;color:var(--vm-text)}
+.vm-pop-cont:hover{border-color:var(--vm-blue);color:var(--vm-blue)}
+body.vm a.vm-pop-go{background:var(--vm-green);color:#fff!important;border:0;outline:0}
+body.vm a.vm-pop-go:focus-visible{box-shadow:0 0 0 3px rgba(34,163,90,.35)}
+body.vm a.vm-pop-go:hover{background:var(--vm-green-dark)}
+@media (max-width:480px){
+  .vm-pop{align-items:flex-end;padding:0}
+  .vm-pop-box{max-width:none;border-radius:16px 16px 0 0;padding:20px 16px calc(16px + env(safe-area-inset-bottom))}
+  .vm-pop-btns{flex-direction:column-reverse}
+  .vm-pop-btns>*{flex:none;height:48px}
+}
+.vm-buy.is-loading,.vm-an-buy.is-loading{opacity:.7;pointer-events:none}
+.vm-buy.is-added{background:var(--vm-green-dark)!important}
+/* hearts */
+.vm-fav{transition:background .15s,color .15s,transform .15s}
+.vm-fav.is-active{background:#fdecec;color:var(--vm-red)}
+.vm-fav.is-active:hover{background:#fbd9d9}
+.vm-link-btn.is-active,.vm-link-btn.is-active .fa{color:var(--vm-red)!important}
+.vm-fav-pop{animation:vmHeart .5s ease}
+@keyframes vmHeart{0%{transform:scale(1)}35%{transform:scale(1.35)}70%{transform:scale(.92)}100%{transform:scale(1)}}
+#wishlist-total{position:relative}
+#wishlist-total.has-items .fa{color:var(--vm-red)}
+#wishlist-total .fa.fa-heart-o:before{content:"\f08a"}
+#wishlist-total.has-items .fa:before{content:"\f004"}
+.vm-wl-count{position:absolute;top:-6px;left:14px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--vm-red);color:#fff;font:700 10px/17px Roboto,Arial,sans-serif;text-align:center;font-style:normal}
+.vm-toast{position:fixed;left:50%;bottom:24px;z-index:10060;transform:translate(-50%,20px);opacity:0;pointer-events:none;background:#1f2a37;color:#fff;border-radius:10px;padding:12px 18px;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.25);transition:all .25s;max-width:calc(100% - 32px);text-align:center}
+.vm-toast.is-open{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.vm-toast .fa{color:#ff7a7a;margin-right:4px}
+body.vm .vm-toast a{color:#9fd0ff;margin-left:8px;text-decoration:underline}
+.vm-toast small{display:block;margin-top:4px;opacity:.85}
+.vm-toast small a{margin-left:0!important}
+@media (max-width:767px){.vm-toast{bottom:calc(76px + env(safe-area-inset-bottom))}}
