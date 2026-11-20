@@ -80,6 +80,30 @@
                 <p class="help-block">{{ help_fallback }}</p></div></div>
             </div>
             <div class="tab-pane" id="tab-home">
+              <fieldset><legend>{{ text_hero }}</legend>
+              <p class="help-block">{{ help_hero }}</p>
+              <div class="form-group"><label class="col-sm-3 control-label">{{ entry_hero_off }}</label><div class="col-sm-9"><label class="checkbox-inline"><input type="checkbox" name="module_vm_theme_hero_off" value="1" {% if module_vm_theme_hero_off %}checked{% endif %}> {{ text_hero_off }}</label></div></div>
+              {% for s in hero_slides %}{% set i = loop.index0 %}
+              <div class="well well-sm" style="background:#fafbfc">
+                <b>{{ text_slide }} {{ loop.index }}</b>
+                <div class="row" style="margin-top:8px">
+                  <div class="col-sm-2"><a href="" id="thumb-hero{{ i }}" data-toggle="image" class="img-thumbnail"><img src="{{ s.thumb }}" alt="" data-placeholder="{{ placeholder }}" /></a><input type="hidden" name="module_vm_theme_hero[{{ i }}][image]" value="{{ s.image }}" id="input-hero{{ i }}" /></div>
+                  <div class="col-sm-10">
+                    <div class="row">
+                      <div class="col-sm-3"><input type="text" name="module_vm_theme_hero[{{ i }}][badge]" value="{{ s.badge }}" class="form-control" placeholder="{{ ph_badge }}"></div>
+                      <div class="col-sm-9"><input type="text" name="module_vm_theme_hero[{{ i }}][title]" value="{{ s.title }}" class="form-control" placeholder="{{ ph_title }}"></div>
+                    </div>
+                    <input type="text" name="module_vm_theme_hero[{{ i }}][text]" value="{{ s.text }}" class="form-control" placeholder="{{ ph_text }}" style="margin-top:6px">
+                    <div class="row" style="margin-top:6px">
+                      <div class="col-sm-3"><input type="text" name="module_vm_theme_hero[{{ i }}][button]" value="{{ s.button }}" class="form-control" placeholder="{{ ph_button }}"></div>
+                      <div class="col-sm-6"><input type="text" name="module_vm_theme_hero[{{ i }}][link]" value="{{ s.link }}" class="form-control" placeholder="{{ ph_link }}"></div>
+                      <div class="col-sm-3"><input type="text" name="module_vm_theme_hero[{{ i }}][price]" value="{{ s.price }}" class="form-control" placeholder="{{ ph_price }}"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+              </fieldset>
               <div class="form-group"><label class="col-sm-3 control-label" for="i-ben">{{ entry_benefits }}</label><div class="col-sm-9"><textarea id="i-ben" name="module_vm_theme_benefits" rows="5" class="form-control">{{ module_vm_theme_benefits }}</textarea><p class="help-block">{{ help_benefits }}</p></div></div>
               <div class="form-group"><label class="col-sm-3 control-label" for="i-new">{{ entry_new_days }}</label><div class="col-sm-9"><input id="i-new" type="number" name="module_vm_theme_new_days" value="{{ module_vm_theme_new_days }}" class="form-control"></div></div>
             </div>

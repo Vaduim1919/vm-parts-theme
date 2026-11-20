@@ -1,12 +1,12 @@
 {{ header }}
-<div id="common-home" class="container vm-home-wrap">
+<div id="common-home" class="container vm-home-wrap{% if vm_hero %} vm-has-hero{% endif %}">
   <div class="vm-home-top">
     <aside class="vm-home-catalog">
       <div class="vm-home-catalog-title"><i class="fa fa-bars"></i> {{ vm_t.text_catalog }}</div>
       <ul class="vm-catalog-list vm-catalog-static">
         {% for cat in vm_menu %}
         <li class="{% if cat.children %}has-children{% endif %}">
-          <a href="{{ cat.href }}">{{ cat.name }}{% if cat.children %}<i class="fa fa-angle-right"></i>{% endif %}</a>
+          <a href="{{ cat.href }}"><span class="vm-cat-ico"><i class="fa {{ cat.icon }}"></i></span><span class="vm-cat-name">{{ cat.name }}</span>{% if cat.children %}<i class="fa fa-angle-right"></i>{% endif %}</a>
           {% if cat.children %}
           <div class="vm-flyout">
             <a class="vm-flyout-title" href="{{ cat.href }}">{{ cat.name }}</a>
@@ -18,26 +18,77 @@
       </ul>
       {{ column_left }}
     </aside>
-    <div class="vm-home-main">{{ content_top }}
+    <div class="vm-home-main">
+      {% if vm_hero %}
+      <div class="vm-hero" data-vm-hero>
+        {% for s in vm_hero %}
+        <div class="vm-hero-slide{% if loop.first %} is-active{% endif %}">
+          <div class="vm-hero-text">
+            {% if s.badge %}<span class="vm-hero-badge">{{ s.badge }}</span>{% endif %}
+            {% if loop.first %}<h1 class="vm-hero-title">{{ s.title }}</h1>{% else %}<div class="vm-hero-title">{{ s.title }}</div>{% endif %}
+            {% if s.text %}<p>{{ s.text }}</p>{% endif %}
+            <div class="vm-hero-cta"><a class="vm-hero-btn" href="{{ s.link }}">{{ s.button }}</a>{% if s.price %}<span class="vm-hero-price">{{ s.price }}</span>{% endif %}</div>
+          </div>
+          <div class="vm-hero-media{% if not s.image %} vm-hero-art{% endif %}">{% if s.image %}<img src="{{ s.image }}" alt="{{ s.badge }}" loading="{% if loop.first %}eager{% else %}lazy{% endif %}">{% else %}<i class="fa fa-car"></i><span class="vm-hero-chip vm-hc1"><i class="fa fa-map-marker"></i> Вінниця</span><span class="vm-hero-chip vm-hc2"><i class="fa fa-barcode"></i> VIN</span><span class="vm-hero-chip vm-hc3"><i class="fa fa-truck"></i> 1–2 дні</span>{% endif %}</div>
+        </div>
+        {% endfor %}
+        {% if vm_hero|length > 1 %}<div class="vm-hero-dots">{% for s in vm_hero %}<button type="button" class="{% if loop.first %}is-active{% endif %}" aria-label="{{ loop.index }}"></button>{% endfor %}</div>{% endif %}
+      </div>
+      {% endif %}
+      {{ content_top }}
       {{ vm_carbar_html }}
+  {% if vm.benefits %}
+      <div class="vm-benefits">
+        {% for b in vm.benefits %}
+        <div class="vm-benefit"><span class="vm-benefit-ico"><i class="fa fa-check"></i></span><span><b>{{ b.title }}</b><br><small>{{ b.text }}</small></span></div>
+        {% endfor %}
+      </div>
+      {% endif %}
     </div>
   </div>
-  {% if vm.benefits %}
-  <div class="vm-benefits">
-    {% for b in vm.benefits %}
-    <div class="vm-benefit"><span class="vm-benefit-ico"><i class="fa fa-check"></i></span><span><b>{{ b.title }}</b><br><small>{{ b.text }}</small></span></div>
+
+  {% if vm_hits %}
+  <section class="vm-hits" data-vm-tabs>
+    <div class="vm-sec-head"><h2 class="vm-h2">{{ vm_t.text_hits }}</h2>
+      {% if vm_hit_tabs %}<div class="vm-tabs-pills"><button type="button" class="is-active" data-cat="">{{ vm_t.text_all_short }}</button>{% for tab in vm_hit_tabs %}<button type="button" data-cat="c{{ tab.id }}">{{ tab.name }}</button>{% endfor %}</div>{% endif %}
+    </div>
+    <div class="vm-grid vm-grid-5">
+      {% for product in vm_hits %}
+      <div class="vm-card{{ product.vm_cats }}">
+  <div class="vm-stickers">{% if product.vm_hit %}<span class="vm-st vm-st-hit">{{ vm_t.text_hit }}</span>{% endif %}{% if product.vm_new %}<span class="vm-st vm-st-new">{{ vm_t.text_new }}</span>{% endif %}{% if product.vm_discount %}<span class="vm-st vm-st-sale">{{ product.vm_discount }}</span>{% endif %}</div>
+  <button type="button" class="vm-fav" title="{{ vm_t.text_wishlist }}" aria-label="{{ vm_t.text_wishlist }}" onclick="wishlist.add('{{ product.product_id }}');"><i class="fa fa-heart-o"></i></button>
+  <a class="vm-card-img" href="{{ product.href }}"><img src="{{ product.thumb }}" alt="{{ product.name }}" title="{{ product.name }}" loading="lazy" /></a>
+  {% if product.vm_stock %}<div class="vm-stock vm-stock-{{ product.vm_stock_class }}">{{ product.vm_stock }}</div>{% endif %}
+  <a class="vm-card-name" href="{{ product.href }}">{{ product.name }}</a>
+  {% if product.vm_fit %}<div class="vm-fit">{{ vm_t.text_fits }}: {{ product.vm_fit }}</div>{% endif %}
+  {% if product.vm_model %}<div class="vm-code">{{ vm_t.text_code }}: {{ product.vm_model }}</div>{% endif %}
+  <div class="vm-card-bottom">
+    {% if product.price %}<div class="vm-price">{% if product.special %}<s>{{ product.price }}</s><b class="vm-price-new">{{ product.special }}</b>{% else %}<b>{{ product.price }}</b>{% endif %}</div>{% endif %}
+    <button type="button" class="vm-buy" onclick="cart.add('{{ product.product_id }}', '{{ product.minimum }}');"><i class="fa fa-shopping-cart"></i> {{ vm_t.text_buy }}</button>
+  </div>
+</div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+  {{ content_bottom }}
+  {% if vm_promos %}
+  <div class="vm-promos">
+    {% for pr in vm_promos %}<a class="vm-promo vm-promo-{{ pr.tone }}" href="{{ pr.href }}"><span class="vm-promo-ico"><i class="fa {{ pr.icon }}"></i></span><span><b>{{ pr.name }}</b><small>{{ pr.text }}</small></span><em>{{ vm_t.text_promo_go }} →</em></a>{% endfor %}
+  </div>
+  {% endif %}
+  {% if vm_wall %}
+  <h2 class="vm-h2">{{ vm_t.text_popular_cats }}</h2>
+  <div class="vm-wall">
+    {% for cat in vm_wall %}
+    <a href="{{ cat.href }}" class="vm-wall-item">{% if cat.image %}<img src="{{ cat.image }}" alt="{{ cat.name }}" loading="lazy">{% else %}<span class="vm-wall-ico"><i class="fa {{ cat.icon }}"></i></span>{% endif %}<span>{{ cat.name }}</span><small>{{ cat.count }}</small></a>
     {% endfor %}
   </div>
   {% endif %}
-  {{ content_bottom }}
-  {% set wall = [] %}
-  {% for cat in vm_menu %}{% if cat.image %}{% set wall = wall|merge([cat]) %}{% endif %}{% endfor %}
-  {% if wall %}
-  <h2 class="vm-h2">{{ vm_t.text_popular_cats }}</h2>
-  <div class="vm-wall">
-    {% for cat in wall|slice(0, 12) %}
-    <a href="{{ cat.href }}" class="vm-wall-item"><img src="{{ cat.image }}" alt="{{ cat.name }}" loading="lazy"><span>{{ cat.name }}</span></a>
-    {% endfor %}
+  {% if vm_makes %}
+  <h2 class="vm-h2">{{ vm_t.text_by_make }}</h2>
+  <div class="vm-makes">
+    {% for m in vm_makes %}<a href="{{ m.href }}" class="vm-make"><span>{{ m.letter }}</span><b>{{ m.name }}</b><small>{{ m.count }}</small></a>{% endfor %}
   </div>
   {% endif %}
   {{ column_right }}

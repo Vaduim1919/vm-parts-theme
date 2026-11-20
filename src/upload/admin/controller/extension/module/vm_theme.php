@@ -69,6 +69,8 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			'module_vm_theme_facebook'  => '',
 			'module_vm_theme_hours'     => '',
 			'module_vm_theme_benefits'  => '',
+			'module_vm_theme_hero'      => array(),
+			'module_vm_theme_hero_off'  => '',
 			'module_vm_theme_new_days'  => 30,
 			'module_vm_theme_fallback'  => '',
 			'module_vm_theme_head_code' => '',
@@ -84,6 +86,19 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			} else {
 				$data[$key] = $default;
 			}
+		}
+
+		// hero slides: three fixed slots with the OpenCart image manager
+		$this->load->model('tool/image');
+		$data['placeholder'] = $this->model_tool_image->resize('no_image.png', 100, 100);
+		$hero = is_array($data['module_vm_theme_hero']) ? array_values($data['module_vm_theme_hero']) : array();
+		$data['hero_slides'] = array();
+
+		for ($i = 0; $i < 3; $i++) {
+			$s = isset($hero[$i]) && is_array($hero[$i]) ? $hero[$i] : array();
+			$s += array('badge' => '', 'title' => '', 'text' => '', 'button' => '', 'link' => '', 'price' => '', 'image' => '');
+			$s['thumb'] = ($s['image'] && is_file(DIR_IMAGE . $s['image'])) ? $this->model_tool_image->resize($s['image'], 100, 100) : $data['placeholder'];
+			$data['hero_slides'][] = $s;
 		}
 
 		$data['version'] = $this->model_extension_module_vm_theme->getVersion();

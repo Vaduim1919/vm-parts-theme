@@ -72,6 +72,22 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$this->response->setOutput(json_encode(array('count' => $this->cartCount())));
 	}
 
+	private function cartSum() {
+		$total = 0;
+
+		foreach ($this->cart->getProducts() as $product) {
+			$total += $this->tax->calculate($product['price'], $product['tax_class_id'], $this->config->get('config_tax')) * $product['quantity'];
+		}
+
+		if (!empty($this->session->data['vouchers'])) {
+			foreach ($this->session->data['vouchers'] as $voucher) {
+				$total += $voucher['amount'];
+			}
+		}
+
+		return $this->currency->format($total, $this->session->data['currency']);
+	}
+
 	// AJAX: cart summary and wishlist ids for the add-to-cart popup and the hearts
 	public function state() {
 		$total = 0;
@@ -168,10 +184,19 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 				$this->header($data);
 				break;
+			case 'common/cart':
+				$data['vm_cart_count'] = $this->cartCount();
+				$data['vm_cart_sum'] = $this->cartSum();
+				break;
+			case 'common/search':
+				$data['vm_search_cats'] = $this->menu();
+				$data['vm_search_cat'] = isset($this->request->get['category_id']) ? (int)$this->request->get['category_id'] : 0;
+				break;
 			case 'common/home':
 				$data['vm_menu'] = $this->menu();
 				$data['vm_garage'] = $this->garage();
 				$data['vm_carbar_html'] = ($this->vmTablesExist() && $this->carMakesData()) ? $this->carBarHtml(false) : '';
+				$this->homeSections($data);
 				break;
 			case 'product/category':
 				if (empty($data['vm_car_page'])) {
@@ -348,9 +373,11 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			}
 
 			$menu[] = array(
+				'id'       => (int)$category['category_id'],
 				'name'     => $category['name'],
 				'href'     => $this->url->link('product/category', 'path=' . $category['category_id']),
 				'image'    => $category['image'] ? $this->model_tool_image->resize($category['image'], 160, 120) : '',
+				'icon'     => self::catIcon($category['name']),
 				'children' => $children
 			);
 		}
@@ -839,6 +866,223 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		}
 
 		$data['vm_garage'] = $garage;
+	}
+
+	// =============================================================== home page sections (1.4.0)
+
+	public static function catIcon($name) {
+		$map = array(
+			'підвіск|рульов|амортиз|подвес' => 'fa-life-ring', 'гальм|тормоз' => 'fa-circle-o-notch', 'фільтр|фильтр' => 'fa-filter',
+			'охолодж|охлажд' => 'fa-snowflake-o', 'грм|ремен|ремн' => 'fa-cogs', 'двигун|двигат' => 'fa-cog', 'палив|топлив' => 'fa-tint',
+			'вихлоп|выхлоп' => 'fa-cloud', 'датчик' => 'fa-tachometer', 'трансміс|трансмис|зчепл|сцепл' => 'fa-sliders', 'електр|электр|освітл|освещ|ламп' => 'fa-bolt',
+			'кузов|склоочис|стеклоочис|дзеркал' => 'fa-car', 'олив|масл|хімі|хими|рідин|жидк' => 'fa-flask', 'аксесуар|аксессуар|інструмент|инструмент' => 'fa-wrench',
+			'акці|акци|знижк|скидк' => 'fa-percent', 'шин|диск' => 'fa-dot-circle-o'
+		);
+		$n = mb_strtolower((string)$name, 'UTF-8');
+
+		foreach ($map as $re => $icon) {
+			if (preg_match('/' . $re . '/u', $n)) {
+				return $icon;
+			}
+		}
+
+		return 'fa-cubes';
+	}
+
+	private function hero() {
+		$t = $this->texts();
+		$slides = $this->config->get('module_vm_theme_hero');
+		$out = array();
+
+		if (is_array($slides)) {
+			$this->load->model('tool/image');
+
+			foreach ($slides as $s) {
+				if (!is_array($s) || trim(isset($s['title']) ? $s['title'] : '') === '') {
+					continue;
+				}
+
+				$img = !empty($s['image']) && is_file(DIR_IMAGE . $s['image']) ? $this->model_tool_image->resize($s['image'], 640, 440) : '';
+				$out[] = array(
+					'badge'  => isset($s['badge']) ? $s['badge'] : '',
+					'title'  => nl2br($s['title']),
+					'text'   => isset($s['text']) ? $s['text'] : '',
+					'button' => !empty($s['button']) ? $s['button'] : $t['text_hero_button'],
+					'link'   => !empty($s['link']) ? $s['link'] : '',
+					'price'  => isset($s['price']) ? $s['price'] : '',
+					'image'  => $img
+				);
+			}
+		}
+
+		if (!$out && $this->config->get('module_vm_theme_hero_off') !== '1') {
+			$out[] = array('badge' => $t['text_hero_badge'], 'title' => $t['text_hero_title'], 'text' => $t['text_hero_text'], 'button' => $t['text_hero_button'], 'link' => '', 'price' => '', 'image' => '');
+		}
+
+		$menu = $this->menu();
+
+		foreach ($out as $k => $s) {
+			if ($s['link'] === '') {
+				$out[$k]['link'] = $menu ? $menu[0]['href'] : $this->url->link('product/search', 'search=');
+			}
+		}
+
+		return $out;
+	}
+
+	// product count per category (whole subtree), active products only; cached for an hour
+	private function categoryCounts() {
+		$key = 'vm_home.catcounts.' . (int)$this->config->get('config_store_id') . '.' . (int)$this->config->get('config_language_id');
+		$data = $this->cache->get($key);
+
+		if (is_array($data)) {
+			return $data;
+		}
+
+		$p = DB_PREFIX;
+		$rows = $this->db->query("SELECT cp.path_id AS category_id, MIN(cp.level) AS lvl, COUNT(DISTINCT p2c.product_id) AS total
+			FROM `{$p}product_to_category` p2c
+			INNER JOIN `{$p}product` pr ON (pr.product_id = p2c.product_id AND pr.status = '1')
+			INNER JOIN `{$p}category_path` cp ON (cp.category_id = p2c.category_id)
+			GROUP BY cp.path_id")->rows;
+
+		$counts = array();
+
+		foreach ($rows as $r) {
+			$counts[(int)$r['category_id']] = (int)$r['total'];
+		}
+
+		$data = array();
+
+		if ($counts) {
+			$q = $this->db->query("SELECT c.category_id, c.parent_id, c.image, cd.name FROM `{$p}category` c
+				INNER JOIN `{$p}category_to_store` c2s ON (c2s.category_id = c.category_id AND c2s.store_id = '" . (int)$this->config->get('config_store_id') . "')
+				LEFT JOIN `{$p}category_description` cd ON (cd.category_id = c.category_id AND cd.language_id = '" . (int)$this->config->get('config_language_id') . "')
+				WHERE c.status = '1' AND c.category_id IN (" . implode(',', array_keys($counts)) . ")");
+
+			foreach ($q->rows as $r) {
+				$data[] = array('id' => (int)$r['category_id'], 'parent' => (int)$r['parent_id'], 'name' => $r['name'], 'image' => $r['image'], 'count' => $counts[(int)$r['category_id']]);
+			}
+		}
+
+		$this->cache->set($key, $data);
+
+		return $data;
+	}
+
+	private static function isOther($name) {
+		return (bool)preg_match('/^(інші|прочие|другие|other)/iu', trim((string)$name));
+	}
+
+	private function catHref($id, $parent) {
+		return $this->url->link('product/category', 'path=' . ($parent ? $parent . '_' : '') . $id);
+	}
+
+	private function homeSections(&$data) {
+		$t = $this->texts();
+		$p = DB_PREFIX;
+
+		$data['vm_hero'] = $this->hero();
+
+		// hits: best sellers first, then fresh in-stock products with a photo
+		$ids = array_slice(array_keys($this->hitIds()), 0, 10);
+
+		if (count($ids) < 10) {
+			$q = $this->db->query("SELECT p.product_id FROM `{$p}product` p INNER JOIN `{$p}product_to_store` p2s ON (p2s.product_id = p.product_id AND p2s.store_id = '" . (int)$this->config->get('config_store_id') . "')
+				WHERE p.status = '1' AND p.quantity > 0 AND p.date_available <= NOW()" . ($ids ? " AND p.product_id NOT IN (" . implode(',', $ids) . ")" : '') . "
+				ORDER BY (p.image <> '' AND p.image NOT LIKE '%placeholder%') DESC, p.date_added DESC LIMIT " . (10 - count($ids)));
+
+			foreach ($q->rows as $r) {
+				$ids[] = (int)$r['product_id'];
+			}
+		}
+
+		$products = $ids ? $this->enrichProducts($this->cards($ids)) : array();
+		$tabs = array();
+
+		if ($ids) {
+			$q = $this->db->query("SELECT p2c.product_id, cp.path_id, cd.name FROM `{$p}product_to_category` p2c
+				INNER JOIN `{$p}category_path` cp ON (cp.category_id = p2c.category_id AND cp.level = 0)
+				LEFT JOIN `{$p}category_description` cd ON (cd.category_id = cp.path_id AND cd.language_id = '" . (int)$this->config->get('config_language_id') . "')
+				WHERE p2c.product_id IN (" . implode(',', $ids) . ")");
+			$by = array();
+
+			foreach ($q->rows as $r) {
+				if (self::isOther($r['name'])) {
+					continue;
+				}
+
+				$by[(int)$r['product_id']][(int)$r['path_id']] = (int)$r['path_id'];
+				$tabs[(int)$r['path_id']]['name'] = $r['name'];
+				$tabs[(int)$r['path_id']]['n'] = (isset($tabs[(int)$r['path_id']]['n']) ? $tabs[(int)$r['path_id']]['n'] : 0) + 1;
+			}
+
+			foreach ($products as $k => $pr) {
+				$products[$k]['vm_cats'] = isset($by[(int)$pr['product_id']]) ? ' c' . implode(' c', $by[(int)$pr['product_id']]) : '';
+			}
+
+			uasort($tabs, function ($a, $b) {
+				return $b['n'] - $a['n'];
+			});
+			$tabs = array_slice($tabs, 0, 5, true);
+		}
+
+		$data['vm_hits'] = $products;
+		$data['vm_hit_tabs'] = array();
+
+		foreach ($tabs as $id => $tab) {
+			if ($tab['n'] > 0 && count($tabs) > 1) {
+				$data['vm_hit_tabs'][] = array('id' => $id, 'name' => $tab['name']);
+			}
+		}
+
+		// promo tiles and category wall from the busiest categories
+		$cats = $this->categoryCounts();
+		$tops = array_values(array_filter($cats, function ($c) {
+			return !$c['parent'] && !self::isOther($c['name']);
+		}));
+		$subs = array_values(array_filter($cats, function ($c) {
+			return $c['parent'] && !self::isOther($c['name']);
+		}));
+		$by_count = function ($a, $b) {
+			return $b['count'] - $a['count'];
+		};
+		usort($tops, $by_count);
+		usort($subs, $by_count);
+
+		$data['vm_promos'] = array();
+
+		foreach (array_slice($tops, 0, 3) as $i => $c) {
+			$data['vm_promos'][] = array('name' => $c['name'], 'text' => sprintf($t['text_promo_count'], number_format($c['count'], 0, '', ' ')), 'href' => $this->catHref($c['id'], 0), 'tone' => $i, 'icon' => self::catIcon($c['name']));
+		}
+
+		$this->load->model('tool/image');
+		$data['vm_wall'] = array();
+
+		foreach (array_slice($subs ? $subs : $tops, 0, 12) as $c) {
+			$data['vm_wall'][] = array(
+				'name'  => $c['name'],
+				'count' => $c['count'],
+				'href'  => $this->catHref($c['id'], $c['parent']),
+				'image' => ($c['image'] && is_file(DIR_IMAGE . $c['image'])) ? $this->model_tool_image->resize($c['image'], 200, 140) : '',
+				'icon'  => self::catIcon($c['name'])
+			);
+		}
+
+		// makes with parts
+		$makes = $this->carMakesData();
+		usort($makes, function ($a, $b) {
+			return ($b['pop'] - $a['pop']) ? $b['pop'] - $a['pop'] : $b['count'] - $a['count'];
+		});
+		$data['vm_makes'] = array();
+
+		foreach (array_slice($makes, 0, 18) as $m) {
+			$data['vm_makes'][] = array('name' => $m['name'], 'letter' => mb_substr($m['name'], 0, 1, 'UTF-8'), 'count' => $m['count'], 'href' => $this->url->link('extension/module/vm_theme/car', 'make_id=' . $m['id']));
+		}
+
+		usort($data['vm_makes'], function ($a, $b) {
+			return strnatcasecmp($a['name'], $b['name']);
+		});
 	}
 
 	// =============================================================== car picker (1.3.0)

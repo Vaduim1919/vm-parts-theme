@@ -1,4 +1,5 @@
 <div id="search" class="vm-search">
-  <input type="text" name="search" value="{{ search }}" placeholder="{{ vm_t.text_search_ph ? vm_t.text_search_ph : text_search }}" aria-label="{{ text_search }}" />
-  <button type="button" aria-label="{{ text_search }}"><i class="fa fa-search"></i></button>
+  {% if vm_search_cats %}<select class="vm-search-cat" aria-label="{{ vm_t.text_all_cats }}"><option value="">{{ vm_t.text_all_cats }}</option>{% for c in vm_search_cats %}<option value="{{ c.id }}"{% if c.id == vm_search_cat %} selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>{% endif %}
+  <span class="vm-search-field"><input type="text" name="search" value="{{ search }}" placeholder="{{ vm_t.text_search_ph ? vm_t.text_search_ph : text_search }}" aria-label="{{ text_search }}" /></span>
+  <button type="button" class="vm-search-go" aria-label="{{ text_search }}"><i class="fa fa-search"></i><span>{{ vm_t.text_search_go }}</span></button>
 </div>

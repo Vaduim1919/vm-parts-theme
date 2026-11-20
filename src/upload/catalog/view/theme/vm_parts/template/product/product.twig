@@ -435,10 +435,7 @@ $('#button-cart').on('click', function() {
 					$('html, body').animate({ scrollTop: 0 }, 'slow');
 				}
 
-				$('#cart > button').html('<span id="cart-total"><i class="fa fa-shopping-cart"></i> ' + json['total'] + '</span>');
-
-
-				$('#cart > ul').load('index.php?route=common/cart/info ul li');
+				if (window.vmCartRefresh) { vmCartRefresh(); } else { $('#cart > ul').load('index.php?route=common/cart/info ul li'); }
 			}
 		},
         error: function(xhr, ajaxOptions, thrownError) {

@@ -1,5 +1,5 @@
 <div id="cart" class="btn-group vm-cart">
-  <button type="button" data-toggle="dropdown" data-loading-text="{{ text_loading }}" class="vm-cart-btn dropdown-toggle"><i class="fa fa-shopping-cart"></i> <span id="cart-total">{{ text_items }}</span></button>
+  <button type="button" data-toggle="dropdown" data-loading-text="{{ text_loading }}" class="vm-cart-btn dropdown-toggle" title="{{ text_items }}"><span class="vm-cart-ico"><i class="fa fa-shopping-cart"></i><b class="vm-cart-n"{% if not vm_cart_count %} hidden{% endif %}>{{ vm_cart_count }}</b></span><span class="vm-cart-txt">{{ vm_t.text_cart_word }}<b>{{ vm_cart_sum }}</b></span><span id="cart-total" hidden>{{ text_items }}</span></button>
   <ul class="dropdown-menu pull-right">
     {% if products or vouchers %}
     <li>
