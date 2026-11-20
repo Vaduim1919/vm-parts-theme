@@ -138,6 +138,7 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		$data['upload_url'] = $this->ajaxUrl('upload');
 		$data['step_url'] = $this->ajaxUrl('step');
 		$data['categories_action'] = $this->link('categories');
+		$data['categorize_url'] = $this->ajaxUrl('categorize');
 		$data['checkout_action'] = $this->link('stockCheckout');
 		$data['check_action'] = $this->link('checkUpdate');
 		$data['update_action'] = $this->link('update');
@@ -413,6 +414,18 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		}
 
 		$this->response->redirect($this->link());
+	}
+
+	public function categorize() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify() || !$this->user->hasPermission('modify', 'catalog/category') || !$this->user->hasPermission('modify', 'catalog/product')) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$after = isset($this->request->get['after']) ? (int)$this->request->get['after'] : 0;
+		$this->json($this->model_extension_module_vm_catalog->categorize($after));
 	}
 
 	// allow checkout of items that are "on order" (quantity 0 at the local warehouse)

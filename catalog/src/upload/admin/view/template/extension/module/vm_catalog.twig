@@ -131,9 +131,11 @@
           {% for root in cat_preset %}<div style="break-inside:avoid;margin-bottom:10px"><b>{{ root.name }}</b> <span class="text-muted">({{ root.children|length }})</span><br>{{ root.children|join(', ') }}</div>{% endfor %}
           </div>
         </details>
+        <button type="button" id="vm-cat-go" class="btn btn-primary"><i class="fa fa-sitemap"></i> {{ button_categorize }}</button>
         <form action="{{ categories_action }}" method="post" style="display:inline">
           <button type="submit" class="btn btn-default" onclick="return confirm('{{ text_cat_confirm|e('js') }}');"><i class="fa fa-plus"></i> {{ button_cat_create }}</button>
         </form>
+        <div id="vm-cat-status" style="max-width:720px;margin-top:12px"></div>
       </div>
     </div>
 
@@ -216,6 +218,23 @@
     }).fail(function (x) { box.html('<div class="alert alert-warning">{{ text_probe_fail|e('js') }}<br><small>' + esc((x.responseText || '').slice(0, 300)) + '</small></div>'); }).always(function () { b.prop('disabled', false); });
   });
 
+
+
+  // ---- categorize
+  $('#vm-cat-go').on('click', function () {
+    if (!confirm('{{ text_categorize_confirm|e('js') }}')) { return; }
+    var b = $(this).prop('disabled', true), box = $('#vm-cat-status'), moved = 0;
+    (function go(after) {
+      $.ajax({ url: '{{ categorize_url|e('js') }}', data: { after: after }, dataType: 'json', timeout: 180000 }).done(function (j) {
+        if (j.error) { b.prop('disabled', false); box.html('<div class="alert alert-danger">' + esc(j.error) + '</div>'); return; }
+        moved += j.moved;
+        var pct = j.total ? Math.floor(j.done * 100 / j.total) : 100;
+        box.html('<div class="progress"><div class="progress-bar progress-bar-striped active" style="width:' + pct + '%">' + pct + '%</div></div><p>' + fmt('{{ text_categorize_progress|e('js') }}', [j.done, j.total, moved]) + '</p>');
+        if (j.finished) { b.prop('disabled', false); box.html('<div class="alert alert-success">' + fmt('{{ text_categorize_done|e('js') }}', [moved, j.other_left]) + '</div>'); return; }
+        go(j.after);
+      }).fail(function () { setTimeout(function () { go(after); }, 4000); });
+    })(0);
+  });
 
   // ---- BM enrichment loop
   var enrichOn = false;

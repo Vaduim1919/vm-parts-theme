@@ -401,7 +401,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		$rows = array();
 
-		$query = $this->db->query("SELECT p.product_id, p.model, p.quantity, p.price, p.date_added, ss.name AS stock_status,
+		$query = $this->db->query("SELECT p.product_id, p.model, p.quantity, p.minimum, p.price, p.date_added, ss.name AS stock_status,
 			(SELECT ps.price FROM `" . DB_PREFIX . "product_special` ps WHERE ps.product_id = p.product_id AND ps.customer_group_id = '" . $group . "' AND ((ps.date_start = '0000-00-00' OR ps.date_start < NOW()) AND (ps.date_end = '0000-00-00' OR ps.date_end > NOW())) ORDER BY ps.priority ASC, ps.price ASC LIMIT 1) AS special
 			FROM `" . DB_PREFIX . "product` p LEFT JOIN `" . DB_PREFIX . "stock_status` ss ON (ss.stock_status_id = p.stock_status_id AND ss.language_id = '" . $lang . "')
 			WHERE p.product_id IN (" . $in . ")");
@@ -455,6 +455,11 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			$products[$k]['vm_stock'] = $in_stock ? $t['text_in_stock'] : ($r['stock_status'] ? $r['stock_status'] : $t['text_out_stock']);
 			$products[$k]['vm_stock_class'] = $in_stock ? 'in' : 'wait';
 			$products[$k]['vm_stock_lines'] = array();
+
+			// module lists (latest/featured/bestseller) don't pass "minimum": cart.add('id', '') adds 0 pcs
+			if (empty($products[$k]['minimum']) || (int)$products[$k]['minimum'] < 1) {
+				$products[$k]['minimum'] = isset($rows[$id]['minimum']) && (int)$rows[$id]['minimum'] > 0 ? (int)$rows[$id]['minimum'] : 1;
+			}
 
 			if (isset($wh[$id]) && ($wh[$id][0] > 0 || $wh[$id][1] > 0)) {
 				$lines = $this->warehouseLines($wh[$id][0], $wh[$id][1]);

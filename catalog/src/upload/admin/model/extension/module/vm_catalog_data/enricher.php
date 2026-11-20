@@ -579,6 +579,24 @@ class VmCatalogEnricher {
 		return $n;
 	}
 
+	// brands BM Parts does not carry (e.g. SATO TECH): after 25 misses and no hits, skip the rest without requests
+	private function skipMissingBrands() {
+		$p = DB_PREFIX;
+		$rows = $this->db->query("SELECT i.brand FROM `{$p}vm_catalog_enrich` e JOIN `{$p}vm_catalog_item` i ON (i.product_id = e.product_id)
+			GROUP BY i.brand HAVING SUM(e.status = 1) = 0 AND SUM(e.status = 0) >= 25")->rows;
+		$n = 0;
+
+		foreach ($rows as $r) {
+			$this->db->query("INSERT IGNORE INTO `{$p}vm_catalog_enrich` (product_id, source, ext_id, status, node, cars_json, extra_json, date_checked)
+				SELECT DISTINCT i.product_id, 'bm', '', 0, 'brand not in BM', '', '', NOW() FROM `{$p}vm_catalog_item` i
+				LEFT JOIN `{$p}vm_catalog_enrich` e ON (e.product_id = i.product_id)
+				WHERE i.brand = '" . $this->db->escape($r['brand']) . "' AND e.product_id IS NULL");
+			$n += $this->db->countAffected();
+		}
+
+		return $n;
+	}
+
 	// products found before 1.4.0: fetch the card again to add engines/characteristics/gallery
 	private $deadline = 0;
 	private $lockFile = '';
@@ -743,6 +761,7 @@ class VmCatalogEnricher {
 		$this->install();
 
 		$this->lockFile = $lock;
+		$stats['brand_skipped'] = $this->skipMissingBrands();
 		$this->backfillPhotos(40, $stats, $start + $seconds * 0.25);
 		$this->refreshOld(40, $stats, $start + $seconds * 0.6);
 

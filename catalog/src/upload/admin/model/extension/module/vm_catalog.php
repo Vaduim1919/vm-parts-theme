@@ -619,9 +619,8 @@ class ModelExtensionModuleVmCatalog extends Model {
 		};
 
 		$ids = $load();
-		$tree = $this->categoryPreset();
 
-		if ($tree && !isset($ids[$this->catKey($tree[0]['children'][0])])) {
+		if (!$this->treeReady($ids)) {
 			$this->createCategories();
 			$ids = $load();
 		}
@@ -632,6 +631,104 @@ class ModelExtensionModuleVmCatalog extends Model {
 		}
 
 		return $this->memo['cat'] = $ids;
+	}
+
+	// most of our 254 categories exist (a lone "Амортизатори" made by hand doesn't count)
+	private function treeReady($ids) {
+		$tree = $this->categoryPreset();
+		$all = $have = 0;
+
+		foreach ($tree as $root) {
+			foreach ($root['children'] as $child) {
+				$all++;
+
+				if (isset($ids[$this->catKey($child)])) {
+					$have++;
+				}
+			}
+		}
+
+		return $all === 0 || $have >= $all * 0.8;
+	}
+
+	// moves products that sit only in "Інші запчастини" (or nowhere) into the right category
+	public function categorize($after, $limit = 1500) {
+		@set_time_limit(120);
+
+		if ($after == 0) {
+			unset($this->memo['cat']);
+			$res = $this->createCategories();
+			unset($this->memo['cat']);
+		}
+
+		$ids = $this->categoryIds();
+		$other = $ids[$this->catKey('Інші запчастини')][0];
+		$enrich = (bool)$this->db->query("SHOW TABLES LIKE '" . DB_PREFIX . "vm_catalog_enrich'")->num_rows;
+
+		$q = $this->db->query("SELECT p.product_id, pd.name" . ($enrich ? ", e.node" : ", '' AS node") . " FROM `" . DB_PREFIX . "product` p
+			LEFT JOIN `" . DB_PREFIX . "product_description` pd ON (pd.product_id = p.product_id AND pd.language_id = '" . (int)$this->config->get('config_language_id') . "')" .
+			($enrich ? " LEFT JOIN `" . DB_PREFIX . "vm_catalog_enrich` e ON (e.product_id = p.product_id)" : "") . "
+			WHERE p.product_id > '" . (int)$after . "' ORDER BY p.product_id ASC LIMIT " . (int)$limit);
+
+		$moved = 0;
+		$last = (int)$after;
+
+		foreach ($q->rows as $row) {
+			$pid = (int)$row['product_id'];
+			$last = $pid;
+			$cats = array();
+
+			foreach ($this->db->query("SELECT category_id FROM `" . DB_PREFIX . "product_to_category` WHERE product_id = '" . $pid . "'")->rows as $c) {
+				$cats[] = (int)$c['category_id'];
+			}
+
+			if ($cats && $cats !== array($other)) {
+				continue; // already placed (by import, by hand or earlier)
+			}
+
+			$new = $this->categoriesFor(html_entity_decode((string)$row['name'], ENT_QUOTES, 'UTF-8'));
+
+			if ($new[0] == $other && trim((string)$row['node']) !== '' && $row['node'] !== 'brand not in BM') {
+				// BM group, e.g. "ГАЛЬМІВНА СИСТЕМА/Дисковий гальмівний механізм/Диски гальмівні": try the last parts first
+				$parts = array_reverse(array_filter(array_map('trim', explode('/', $row['node']))));
+
+				foreach ($parts as $part) {
+					$try = $this->categoriesFor($part);
+
+					if ($try[0] != $other) {
+						$new = $try;
+						break;
+					}
+				}
+			}
+
+			if ($new[0] == $other) {
+				if (!$cats) {
+					$this->db->query("INSERT IGNORE INTO `" . DB_PREFIX . "product_to_category` SET product_id = '" . $pid . "', category_id = '" . (int)$other . "'");
+				}
+
+				continue;
+			}
+
+			$this->db->query("DELETE FROM `" . DB_PREFIX . "product_to_category` WHERE product_id = '" . $pid . "' AND category_id = '" . (int)$other . "'");
+
+			foreach ($new as $cid) {
+				$this->db->query("INSERT IGNORE INTO `" . DB_PREFIX . "product_to_category` SET product_id = '" . $pid . "', category_id = '" . (int)$cid . "'");
+			}
+
+			$moved++;
+		}
+
+		$total = (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "product`")->row['n'];
+		$done = (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "product` WHERE product_id <= '" . (int)$last . "'")->row['n'];
+		$left = (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "product_to_category` WHERE category_id = '" . (int)$other . "'")->row['n'];
+
+		if (!$q->num_rows || $q->num_rows < $limit) {
+			$this->cache->delete('category');
+			$this->cache->delete('product');
+		}
+
+		return array('after' => $last, 'moved' => $moved, 'done' => $done, 'total' => $total, 'finished' => !$q->num_rows || $q->num_rows < $limit, 'other_left' => $left);
 	}
 
 	private function rules() {
