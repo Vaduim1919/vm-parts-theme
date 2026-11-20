@@ -563,6 +563,8 @@ class VmCatalogEnricher {
 		$n = 0;
 
 		foreach (array_slice($paths, 1, $max - 1) as $k => $path) {
+			$this->keepLock();
+
 			foreach ($this->imageUrls($path) as $url) {
 				$rel = $sub . (int)$product_id . '-' . ($k + 2) . '.jpg';
 
@@ -578,12 +580,30 @@ class VmCatalogEnricher {
 	}
 
 	// products found before 1.4.0: fetch the card again to add engines/characteristics/gallery
-	private function refreshOld($limit, &$stats) {
+	private $deadline = 0;
+	private $lockFile = '';
+
+	private function timeLeft() {
+		return $this->deadline - microtime(true);
+	}
+
+	private function keepLock() {
+		if ($this->lockFile) {
+			@touch($this->lockFile);
+		}
+	}
+
+	private function refreshOld($limit, &$stats, $until = 0) {
 		$q = $this->db->query("SELECT e.product_id, e.ext_id, MAX(i.local_qty) AS local_qty FROM `" . DB_PREFIX . "vm_catalog_enrich` e
 			JOIN `" . DB_PREFIX . "vm_catalog_item` i ON (i.product_id = e.product_id)
 			WHERE e.status = 1 AND e.ext_id <> '' AND e.extra_json = '' GROUP BY e.product_id LIMIT " . (int)$limit);
 
 		foreach ($q->rows as $row) {
+			if ($until && microtime(true) > $until) {
+				return;
+			}
+
+			$this->keepLock();
 			$res = $this->saveBm($row['product_id'], $row['ext_id'], (int)$row['local_qty']);
 
 			if (isset($res['error'])) {
@@ -602,7 +622,7 @@ class VmCatalogEnricher {
 	}
 
 	// photos for products found earlier that still have none (e.g. after a failed download)
-	private function backfillPhotos($limit, &$stats) {
+	private function backfillPhotos($limit, &$stats, $until = 0) {
 		$mode = $this->setting('bm_photos', 'all');
 
 		if ($mode === 'none') {
@@ -616,6 +636,11 @@ class VmCatalogEnricher {
 			GROUP BY e.product_id LIMIT " . (int)$limit);
 
 		foreach ($q->rows as $row) {
+			if ($until && microtime(true) > $until) {
+				return;
+			}
+
+			$this->keepLock();
 			$r = $this->bm('GET', 'product/' . rawurlencode($row['ext_id']) . '/images');
 
 			if ($r['code'] == 429) {
@@ -717,8 +742,9 @@ class VmCatalogEnricher {
 		// cron may run before the module page is opened after an update: make sure new columns exist
 		$this->install();
 
-		$this->backfillPhotos(40, $stats);
-		$this->refreshOld(40, $stats);
+		$this->lockFile = $lock;
+		$this->backfillPhotos(40, $stats, $start + $seconds * 0.25);
+		$this->refreshOld(40, $stats, $start + $seconds * 0.6);
 
 		while (microtime(true) - $start < $seconds && $this->requests < $max_requests) {
 			$q = $this->db->query("SELECT i.product_id, i.article, i.brand, MAX(i.local_qty) AS local_qty
