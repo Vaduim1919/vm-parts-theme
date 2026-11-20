@@ -98,6 +98,10 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$data['vm_t'] = $this->texts();
 		$data['vm'] = $this->settings();
 
+		if ($route === 'product/search') {
+			$this->searchByOe($data);
+		}
+
 		if (isset($data['products']) && is_array($data['products']) && $data['products']) {
 			$data['products'] = $this->enrichProducts($data['products']);
 		}
@@ -342,7 +346,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		}
 
 		if ($r > 0) {
-			$lines[] = array('class' => 'wait', 'text' => ($remote !== '' ? $remote : $t['text_wh_remote']), 'note' => sprintf($days == 1 ? $t['text_wh_day'] : $t['text_wh_days'], $days));
+			$lines[] = array('class' => 'wait', 'text' => ($remote !== '' ? $remote : $t['text_wh_remote']), 'note' => sprintf($t['text_wh_qty'], $r >= 10 ? '10+' : $r) . ', ' . sprintf($days == 1 ? $t['text_wh_day'] : $t['text_wh_days'], $days));
 		}
 
 		return $lines;
@@ -472,6 +476,261 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		return $products;
 	}
 
+
+	private function hasTable($name) {
+		static $cache = array();
+
+		if (!isset($cache[$name])) {
+			$cache[$name] = (bool)$this->db->query("SHOW TABLES LIKE '" . $this->db->escape(DB_PREFIX . $name) . "'")->num_rows;
+		}
+
+		return $cache[$name];
+	}
+
+	private static function partKey($s) {
+		return mb_substr(mb_strtoupper(preg_replace('/[^\p{L}\p{N}]+/u', '', (string)$s), 'UTF-8'), 0, 64, 'UTF-8');
+	}
+
+	// product cards in the same shape as OpenCart's category/search controllers build them
+	private function cards($ids) {
+		$this->load->model('catalog/product');
+		$this->load->model('tool/image');
+		$theme = $this->config->get('config_theme');
+		$w = (int)$this->config->get('theme_' . $theme . '_image_product_width') ?: 228;
+		$h = (int)$this->config->get('theme_' . $theme . '_image_product_height') ?: 228;
+		$out = array();
+
+		foreach ($ids as $id) {
+			$p = $this->model_catalog_product->getProduct((int)$id);
+
+			if (!$p) {
+				continue;
+			}
+
+			$tax = $this->config->get('config_tax');
+			$price = ($this->customer->isLogged() || !$this->config->get('config_customer_price')) ? $this->currency->format($this->tax->calculate($p['price'], $p['tax_class_id'], $tax), $this->session->data['currency']) : false;
+			$special = ((float)$p['special']) ? $this->currency->format($this->tax->calculate($p['special'], $p['tax_class_id'], $tax), $this->session->data['currency']) : false;
+
+			$out[] = array(
+				'product_id'  => $p['product_id'],
+				'thumb'       => $this->model_tool_image->resize($p['image'] ? $p['image'] : 'placeholder.png', $w, $h),
+				'name'        => $p['name'],
+				'description' => '',
+				'price'       => $price,
+				'special'     => $special,
+				'tax'         => false,
+				'minimum'     => $p['minimum'] > 0 ? $p['minimum'] : 1,
+				'rating'      => $p['rating'],
+				'href'        => $this->url->link('product/product', 'product_id=' . $p['product_id'])
+			);
+		}
+
+		return $out;
+	}
+
+	// "0 986 479 B15", "GHP9-33-25XA": find products by OE / cross numbers from BM Parts
+	private function searchByOe(&$data) {
+		$term = isset($this->request->get['search']) ? $this->request->get['search'] : (isset($this->request->get['tag']) ? $this->request->get['tag'] : '');
+		$key = self::partKey(html_entity_decode($term, ENT_QUOTES, 'UTF-8'));
+
+		if (mb_strlen($key, 'UTF-8') < 4 || !$this->hasTable('vm_catalog_oe')) {
+			return;
+		}
+
+		$have = array();
+
+		foreach ((array)(isset($data['products']) ? $data['products'] : array()) as $p) {
+			$have[(int)$p['product_id']] = true;
+		}
+
+		$ids = array();
+		$q = $this->db->query("SELECT DISTINCT o.product_id FROM `" . DB_PREFIX . "vm_catalog_oe` o JOIN `" . DB_PREFIX . "product` p ON (p.product_id = o.product_id AND p.status = 1) WHERE o.oe_key = '" . $this->db->escape($key) . "' LIMIT 40");
+
+		foreach ($q->rows as $r) {
+			if (!isset($have[(int)$r['product_id']])) {
+				$ids[] = (int)$r['product_id'];
+			}
+		}
+
+		if ($ids) {
+			$data['products'] = array_merge(isset($data['products']) && is_array($data['products']) ? $data['products'] : array(), $this->cards($ids));
+			$data['vm_oe_found'] = count($ids);
+		}
+	}
+
+	// vehicles from BM: [{brand, models:[{model, engines:[...]}]}] -> makes/models/engines for the 3-column tab
+	private function compatTree($json) {
+		$cars = json_decode((string)$json, true);
+		$tree = array();
+
+		if (!is_array($cars)) {
+			return $tree;
+		}
+
+		$str = function ($v) {
+			if (is_array($v)) {
+				foreach (array('name', 'title', 'model', 'engine', 'value') as $k) {
+					if (isset($v[$k]) && is_scalar($v[$k]) && trim((string)$v[$k]) !== '') {
+						$main = trim((string)$v[$k]);
+						$more = array();
+
+						foreach (array('years', 'year', 'period', 'power', 'kw', 'hp', 'volume', 'fuel', 'code', 'engine_code') as $x) {
+							if ($x !== $k && isset($v[$x]) && is_scalar($v[$x]) && trim((string)$v[$x]) !== '') {
+								$more[] = trim((string)$v[$x]);
+							}
+						}
+
+						return $main . ($more ? ' · ' . implode(' · ', $more) : '');
+					}
+				}
+
+				return implode(' ', array_filter(array_map(function ($x) { return is_scalar($x) ? (string)$x : ''; }, $v)));
+			}
+
+			return trim((string)$v);
+		};
+
+		foreach ($cars as $car) {
+			if (!is_array($car)) {
+				continue;
+			}
+
+			$make = $str(isset($car['brand']) ? $car['brand'] : (isset($car['name']) ? $car['name'] : ''));
+
+			if ($make === '') {
+				continue;
+			}
+
+			$models = array();
+
+			foreach ((isset($car['models']) && is_array($car['models']) ? $car['models'] : array()) as $m) {
+				$name = $str(is_array($m) && isset($m['model']) ? $m['model'] : $m);
+				$engines = array();
+
+				foreach ((is_array($m) && isset($m['engines']) && is_array($m['engines']) ? $m['engines'] : array()) as $e) {
+					$e = $str($e);
+
+					if ($e !== '') {
+						$engines[] = $e;
+					}
+				}
+
+				if ($name !== '') {
+					$models[] = array('name' => $name, 'engines' => array_values(array_unique($engines)));
+				}
+			}
+
+			$tree[] = array('name' => $make, 'models' => $models);
+		}
+
+		usort($tree, function ($a, $b) { return strcasecmp($a['name'], $b['name']); });
+
+		return $tree;
+	}
+
+	private function productExtras(&$data) {
+		$id = (int)$data['product_id'];
+		$t = $this->texts();
+		$data['vm_compat'] = array();
+		$data['vm_oe'] = array();
+		$data['vm_analogs'] = array();
+		$data['vm_analogs_more'] = 0;
+		$data['vm_chars'] = array();
+		$extra = array();
+		$node = '';
+
+		if ($this->hasTable('vm_catalog_enrich')) {
+			$e = $this->db->query("SELECT * FROM `" . DB_PREFIX . "vm_catalog_enrich` WHERE product_id = '" . $id . "' AND status = 1")->row;
+
+			if ($e) {
+				$data['vm_compat'] = $this->compatTree($e['cars_json']);
+				$extra = isset($e['extra_json']) ? (array)json_decode($e['extra_json'], true) : array();
+				$node = (string)$e['node'];
+			}
+		}
+
+		if ($this->hasTable('vm_catalog_oe')) {
+			foreach ($this->db->query("SELECT oe FROM `" . DB_PREFIX . "vm_catalog_oe` WHERE product_id = '" . $id . "' ORDER BY oe LIMIT 600")->rows as $r) {
+				$data['vm_oe'][] = array('oe' => $r['oe'], 'href' => $this->url->link('product/search', 'search=' . urlencode($r['oe'])));
+			}
+		}
+
+		if ($this->hasTable('vm_catalog_analog')) {
+			$all = (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "vm_catalog_analog` WHERE product_id = '" . $id . "'")->row['n'];
+
+			if ($all && $this->hasTable('vm_catalog_item')) {
+				$rows = $this->db->query("SELECT DISTINCT i.product_id FROM `" . DB_PREFIX . "vm_catalog_analog` a
+					JOIN `" . DB_PREFIX . "vm_catalog_item` i ON (i.art_key = a.art_key)
+					JOIN `" . DB_PREFIX . "product` p ON (p.product_id = i.product_id AND p.status = 1)
+					WHERE a.product_id = '" . $id . "' AND i.product_id <> '" . $id . "' LIMIT 24")->rows;
+				$ids = array();
+
+				foreach ($rows as $r) {
+					$ids[] = (int)$r['product_id'];
+				}
+
+				if ($ids) {
+					$data['vm_analogs'] = $this->enrichProducts($this->cards($ids));
+				}
+
+				$data['vm_analogs_more'] = max(0, $all - count($data['vm_analogs']));
+			}
+		}
+
+		// characteristics: shop data + supplier data
+		$p = $data;
+		$chars = array();
+
+		if (!empty($p['manufacturer'])) {
+			$chars[] = array($t['text_ch_brand'], $p['manufacturer']);
+		}
+
+		if (!empty($p['model'])) {
+			$chars[] = array($t['text_ch_article'], $p['model']);
+		}
+
+		if ($node !== '') {
+			$chars[] = array($t['text_ch_group'], mb_convert_case(mb_strtolower(str_replace('/', ' / ', $node), 'UTF-8'), MB_CASE_TITLE, 'UTF-8'));
+		}
+
+		if (!empty($extra['weight'])) {
+			$chars[] = array($t['text_ch_weight'], rtrim(rtrim(number_format((float)$extra['weight'], 3, '.', ''), '0'), '.') . ' ' . $t['text_ch_kg']);
+		}
+
+		if (!empty($extra['barcodes'])) {
+			$chars[] = array($t['text_ch_barcode'], implode(', ', (array)$extra['barcodes']));
+		}
+
+		if (!empty($extra['multiplicity']) && (int)$extra['multiplicity'] > 1) {
+			$chars[] = array($t['text_ch_mult'], sprintf($t['text_ch_mult_v'], (int)$extra['multiplicity']));
+		}
+
+		if ($data['vm_compat']) {
+			$models = 0;
+
+			foreach ($data['vm_compat'] as $mk) {
+				$models += count($mk['models']);
+			}
+
+			$chars[] = array($t['text_ch_cars'], sprintf($t['text_ch_cars_v'], count($data['vm_compat']), $models));
+		}
+
+		if ($data['vm_oe']) {
+			$chars[] = array($t['text_ch_oe'], count($data['vm_oe']));
+		}
+
+		$data['vm_chars'] = $chars;
+		$data['vm_images_all'] = array();
+
+		if (!empty($data['popup'])) {
+			$data['vm_images_all'][] = array('popup' => $data['popup'], 'thumb' => $data['thumb']);
+		}
+
+		foreach ((array)(isset($data['images']) ? $data['images'] : array()) as $img) {
+			$data['vm_images_all'][] = $img;
+		}
+	}
+
 	private function productPage(&$data) {
 		if (empty($data['product_id'])) {
 			return;
@@ -496,5 +755,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				);
 			}
 		}
+
+		$this->productExtras($data);
 	}
 }

@@ -42,6 +42,16 @@ class VmCatalogEnricher {
 			`status` TINYINT(1) NOT NULL DEFAULT 0, `cars` INT(11) NOT NULL DEFAULT 0, `oe` INT(11) NOT NULL DEFAULT 0, `analogs` INT(11) NOT NULL DEFAULT 0,
 			`images` INT(11) NOT NULL DEFAULT 0, `node` VARCHAR(255) NOT NULL DEFAULT '', `cars_json` MEDIUMTEXT NOT NULL, `date_checked` DATETIME NOT NULL,
 			PRIMARY KEY (`product_id`), KEY `status` (`status`, `date_checked`)) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4");
+		$cols = array();
+
+		foreach ($this->db->query("SHOW COLUMNS FROM `{$p}vm_catalog_enrich`")->rows as $c) {
+			$cols[] = $c['Field'];
+		}
+
+		if (!in_array('extra_json', $cols)) {
+			$this->db->query("ALTER TABLE `{$p}vm_catalog_enrich` ADD `extra_json` MEDIUMTEXT NOT NULL AFTER `cars_json`");
+		}
+
 		$this->db->query("CREATE TABLE IF NOT EXISTS `{$p}vm_catalog_oe` (
 			`product_id` INT(11) NOT NULL, `oe_key` VARCHAR(64) NOT NULL, `oe` VARCHAR(64) NOT NULL,
 			PRIMARY KEY (`product_id`, `oe_key`), KEY `oe_key` (`oe_key`)) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4");
@@ -535,6 +545,62 @@ class VmCatalogEnricher {
 		return -1;
 	}
 
+	// additional photos -> product_image (gallery), up to $max in total with the main one
+	private function saveMoreImages($product_id, $paths, $max = 6) {
+		$paths = array_values(array_filter((array)$paths, 'is_string'));
+
+		if (count($paths) < 2) {
+			return 0;
+		}
+
+		$have = (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "product_image` WHERE product_id = '" . (int)$product_id . "'")->row['n'];
+
+		if ($have > 0) {
+			return 0;
+		}
+
+		$sub = 'catalog/bm/' . substr(md5($product_id), 0, 2) . '/';
+		$n = 0;
+
+		foreach (array_slice($paths, 1, $max - 1) as $k => $path) {
+			foreach ($this->imageUrls($path) as $url) {
+				$rel = $sub . (int)$product_id . '-' . ($k + 2) . '.jpg';
+
+				if ($this->download($url, DIR_IMAGE . $rel)) {
+					$this->db->query("INSERT INTO `" . DB_PREFIX . "product_image` SET product_id = '" . (int)$product_id . "', image = '" . $this->db->escape($rel) . "', sort_order = '" . ($k + 1) . "'");
+					$n++;
+					break;
+				}
+			}
+		}
+
+		return $n;
+	}
+
+	// products found before 1.4.0: fetch the card again to add engines/characteristics/gallery
+	private function refreshOld($limit, &$stats) {
+		$q = $this->db->query("SELECT e.product_id, e.ext_id, MAX(i.local_qty) AS local_qty FROM `" . DB_PREFIX . "vm_catalog_enrich` e
+			JOIN `" . DB_PREFIX . "vm_catalog_item` i ON (i.product_id = e.product_id)
+			WHERE e.status = 1 AND e.ext_id <> '' AND e.extra_json = '' GROUP BY e.product_id LIMIT " . (int)$limit);
+
+		foreach ($q->rows as $row) {
+			$res = $this->saveBm($row['product_id'], $row['ext_id'], (int)$row['local_qty']);
+
+			if (isset($res['error'])) {
+				if ($res['code'] == 429) {
+					return;
+				}
+
+				continue;
+			}
+
+			$keep = $this->db->query("SELECT images FROM `" . DB_PREFIX . "vm_catalog_enrich` WHERE product_id = '" . (int)$row['product_id'] . "'")->row;
+			$res['images'] = max((int)$res['images'], isset($keep['images']) ? (int)$keep['images'] : 0);
+			$this->mark($row['product_id'], 1, $row['ext_id'], $res);
+			$stats['refreshed'] = (isset($stats['refreshed']) ? $stats['refreshed'] : 0) + 1;
+		}
+	}
+
 	// photos for products found earlier that still have none (e.g. after a failed download)
 	private function backfillPhotos($limit, &$stats) {
 		$mode = $this->setting('bm_photos', 'all');
@@ -587,11 +653,27 @@ class VmCatalogEnricher {
 			'cars_json' => json_encode(isset($p['cars']) ? $p['cars'] : array(), JSON_UNESCAPED_UNICODE)
 		);
 
+		$imgs = !empty($p['images']) && is_array($p['images']) ? $p['images'] : (!empty($p['default_image']) ? array($p['default_image']) : array());
+		$res['extra_json'] = json_encode(array(
+			'article'      => isset($p['article']) ? $p['article'] : '',
+			'brand'        => isset($p['brand']) ? $p['brand'] : '',
+			'weight'       => isset($p['weight']) ? (float)$p['weight'] : 0,
+			'barcodes'     => isset($p['barcodes']) && is_array($p['barcodes']) ? array_slice(array_values(array_filter($p['barcodes'], 'is_string')), 0, 5) : array(),
+			'multiplicity' => isset($p['multiplicity']) ? (int)$p['multiplicity'] : 1,
+			'images'       => count($imgs),
+			'description'  => isset($p['description']) && is_string($p['description']) ? mb_substr(trim(strip_tags($p['description'])), 0, 4000) : ''
+		), JSON_UNESCAPED_UNICODE);
+
 		$mode = $this->setting('bm_photos', 'all');
 
 		if ($mode === 'all' || ($mode === 'local' && $local_qty > 0)) {
-			$imgs = !empty($p['images']) ? $p['images'] : (!empty($p['default_image']) ? array($p['default_image']) : array());
 			$res['images'] = $this->saveImage($product_id, $imgs);
+			$this->saveMoreImages($product_id, $imgs);
+		}
+
+		// supplier description into an empty product description
+		if (!empty($p['description']) && is_string($p['description']) && trim(strip_tags($p['description'])) !== '') {
+			$this->db->query("UPDATE `" . DB_PREFIX . "product_description` SET description = '" . $this->db->escape(htmlspecialchars(nl2br(trim(strip_tags($p['description'], '<br><p><ul><li><b><strong>'))), ENT_COMPAT, 'UTF-8')) . "' WHERE product_id = '" . (int)$product_id . "' AND description = ''");
 		}
 
 		if (!empty($p['weight']) && (float)$p['weight'] > 0) {
@@ -604,7 +686,7 @@ class VmCatalogEnricher {
 	// ------------------------------------------------------------ batch
 
 	private function mark($product_id, $status, $uuid = '', $res = array()) {
-		$this->db->query("REPLACE INTO `" . DB_PREFIX . "vm_catalog_enrich` SET product_id = '" . (int)$product_id . "', source = 'bm', ext_id = '" . $this->db->escape($uuid) . "', status = '" . (int)$status . "', cars = '" . (int)(isset($res['cars']) ? $res['cars'] : 0) . "', oe = '" . (int)(isset($res['oe']) ? $res['oe'] : 0) . "', analogs = '" . (int)(isset($res['analogs']) ? $res['analogs'] : 0) . "', images = '" . (int)(isset($res['images']) ? $res['images'] : 0) . "', node = '" . $this->db->escape(isset($res['node']) ? $res['node'] : '') . "', cars_json = '" . $this->db->escape(isset($res['cars_json']) ? $res['cars_json'] : '') . "', date_checked = NOW()");
+		$this->db->query("REPLACE INTO `" . DB_PREFIX . "vm_catalog_enrich` SET product_id = '" . (int)$product_id . "', source = 'bm', ext_id = '" . $this->db->escape($uuid) . "', status = '" . (int)$status . "', cars = '" . (int)(isset($res['cars']) ? $res['cars'] : 0) . "', oe = '" . (int)(isset($res['oe']) ? $res['oe'] : 0) . "', analogs = '" . (int)(isset($res['analogs']) ? $res['analogs'] : 0) . "', images = '" . (int)(isset($res['images']) ? $res['images'] : 0) . "', node = '" . $this->db->escape(isset($res['node']) ? $res['node'] : '') . "', cars_json = '" . $this->db->escape(isset($res['cars_json']) ? $res['cars_json'] : '') . "', extra_json = '" . $this->db->escape(isset($res['extra_json']) ? $res['extra_json'] : '') . "', date_checked = NOW()");
 	}
 
 	/**
@@ -632,7 +714,11 @@ class VmCatalogEnricher {
 		@touch($lock);
 		@set_time_limit($seconds + 60);
 
+		// cron may run before the module page is opened after an update: make sure new columns exist
+		$this->install();
+
 		$this->backfillPhotos(40, $stats);
+		$this->refreshOld(40, $stats);
 
 		while (microtime(true) - $start < $seconds && $this->requests < $max_requests) {
 			$q = $this->db->query("SELECT i.product_id, i.article, i.brand, MAX(i.local_qty) AS local_qty

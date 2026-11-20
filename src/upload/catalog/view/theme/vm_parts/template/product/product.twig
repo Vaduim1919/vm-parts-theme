@@ -194,45 +194,86 @@
         </div>
       </div>
       <div class="vm-box vm-pp-tabs">
-          <ul class="nav nav-tabs">
-            <li class="active"><a href="#tab-description" data-toggle="tab">{{ tab_description }}</a></li>
-            <li><a href="#tab-vm-compat" data-toggle="tab">{{ vm_t.text_compat }}{% if vm_fits %} ({{ vm_fits|length }}){% endif %}</a></li>
-            {% if attribute_groups %}
-            <li><a href="#tab-specification" data-toggle="tab">{{ tab_attribute }}</a></li>
-            {% endif %}
+          <ul class="nav nav-tabs vm-tabs">
+            <li class="active"><a href="#tab-vm-chars" data-toggle="tab"><i class="fa fa-list-ul"></i> {{ vm_t.text_tab_chars }}</a></li>
+            <li><a href="#tab-description" data-toggle="tab"><i class="fa fa-file-text-o"></i> {{ vm_t.text_tab_desc }}</a></li>
+            <li><a href="#tab-vm-compat" data-toggle="tab"><i class="fa fa-car"></i> {{ vm_t.text_compat }}{% if vm_compat %} ({{ vm_compat|length }}){% elseif vm_fits %} ({{ vm_fits|length }}){% endif %}</a></li>
+            <li><a href="#tab-vm-oe" data-toggle="tab"><i class="fa fa-hashtag"></i> {{ vm_t.text_tab_oe }}{% if vm_oe %} ({{ vm_oe|length }}){% endif %}</a></li>
+            <li><a href="#tab-vm-analogs" data-toggle="tab"><i class="fa fa-exchange"></i> {{ vm_t.text_tab_analogs }}{% if vm_analogs %} ({{ vm_analogs|length }}){% endif %}</a></li>
+            {% if vm_images_all|length > 1 %}<li><a href="#tab-vm-photos" data-toggle="tab"><i class="fa fa-picture-o"></i> {{ vm_t.text_tab_photos }} ({{ vm_images_all|length }})</a></li>{% endif %}
             {% if review_status %}
-            <li><a href="#tab-review" data-toggle="tab">{{ tab_review }}</a></li>
+            <li><a href="#tab-review" data-toggle="tab"><i class="fa fa-star-o"></i> {{ tab_review }}</a></li>
             {% endif %}
           </ul>
           <div class="tab-content">
-            <div class="tab-pane active" id="tab-description">{{ description }}</div>
+            <div class="tab-pane active" id="tab-vm-chars">
+              <table class="vm-chars">
+                {% for c in vm_chars %}<tr><th>{{ c[0] }}</th><td>{{ c[1] }}</td></tr>{% endfor %}
+                {% for attribute_group in attribute_groups %}{% for attribute in attribute_group.attribute %}<tr><th>{{ attribute.name }}</th><td>{{ attribute.text }}</td></tr>{% endfor %}{% endfor %}
+              </table>
+            </div>
+            <div class="tab-pane" id="tab-description">
+              {% if description|striptags|trim %}<div class="vm-article">{{ description }}</div>{% else %}<p>{{ vm_t.text_desc_auto|format(heading_title, manufacturer ? manufacturer : '—', model) }}</p>{% endif %}
+            </div>
             <div class="tab-pane" id="tab-vm-compat">
-              {% if vm_fits %}
+              {% if vm_compat %}
+              <div class="vm-cmp" id="vm-cmp">
+                <div class="vm-cmp-col"><div class="vm-cmp-head">{{ vm_t.text_cmp_make }}</div><ul class="vm-cmp-list" data-level="make">{% for mk in vm_compat %}<li><button type="button" data-i="{{ loop.index0 }}"{% if loop.first %} class="is-active"{% endif %}>{{ mk.name }}</button></li>{% endfor %}</ul></div>
+                <div class="vm-cmp-col"><div class="vm-cmp-head">{{ vm_t.text_cmp_model }}</div><ul class="vm-cmp-list" data-level="model"></ul></div>
+                <div class="vm-cmp-col"><div class="vm-cmp-head">{{ vm_t.text_cmp_mod }}</div><ul class="vm-cmp-list" data-level="mod"><li class="vm-cmp-hint">{{ vm_t.text_cmp_pick }}</li></ul></div>
+              </div>
+              <script type="application/json" id="vm-cmp-data">{{ vm_compat|json_encode|replace({'</': '<\\/'}) }}</script>
+              <script>
+              (function(){
+                var box=document.getElementById('vm-cmp');if(!box)return;
+                var data=JSON.parse(document.getElementById('vm-cmp-data').textContent);
+                var L=box.querySelectorAll('.vm-cmp-list'),pick='{{ vm_t.text_cmp_pick|e('js') }}',none='{{ vm_t.text_cmp_none|e('js') }}';
+                function esc(t){var d=document.createElement('div');d.textContent=t;return d.innerHTML;}
+                function models(i){
+                  var mk=data[i]||{models:[]};
+                  L[1].innerHTML=mk.models.map(function(m,j){return '<li><button type="button" data-j="'+j+'">'+esc(m.name)+'</button></li>';}).join('');
+                  L[2].innerHTML='<li class="vm-cmp-hint">'+pick+'</li>';
+                  [].forEach.call(L[1].querySelectorAll('button'),function(b){b.onclick=function(){
+                    [].forEach.call(L[1].querySelectorAll('button'),function(x){x.classList.remove('is-active');});b.classList.add('is-active');
+                    var en=mk.models[+b.getAttribute('data-j')].engines||[];
+                    L[2].innerHTML=en.length?en.map(function(e){return '<li class="vm-cmp-eng">'+esc(e)+'</li>';}).join(''):'<li class="vm-cmp-hint">'+none+'</li>';
+                  };});
+                }
+                [].forEach.call(L[0].querySelectorAll('button'),function(b){b.onclick=function(){
+                  [].forEach.call(L[0].querySelectorAll('button'),function(x){x.classList.remove('is-active');});b.classList.add('is-active');models(+b.getAttribute('data-i'));
+                };});
+                models(0);
+              })();
+              </script>
+              {% elseif vm_fits %}
               <div class="table-responsive"><table class="table vm-compat-table">
                 <thead><tr><th>{{ vm_t.text_make }}</th><th>{{ vm_t.text_model_car }}</th><th>{{ vm_t.text_years }}</th></tr></thead>
                 <tbody>{% for f in vm_fits %}<tr><td><b>{{ f.make }}</b></td><td>{{ f.model }}</td><td>{{ f.years }}</td></tr>{% endfor %}</tbody>
               </table></div>
-              {% else %}<p class="text-muted">{{ vm_t.text_no_compat }}</p>{% endif %}
+              {% else %}<p class="text-muted">{{ vm_t.text_cmp_empty }}</p>{% endif %}
             </div>
-            {% if attribute_groups %}
-            <div class="tab-pane" id="tab-specification">
-              <table class="table table-bordered">
-                {% for attribute_group in attribute_groups %}
-                <thead>
-                  <tr>
-                    <td colspan="2"><strong>{{ attribute_group.name }}</strong></td>
-                  </tr>
-                </thead>
-                <tbody>
-                {% for attribute in attribute_group.attribute %}
-                <tr>
-                  <td>{{ attribute.name }}</td>
-                  <td>{{ attribute.text }}</td>
-                </tr>
-                {% endfor %}
-                  </tbody>
-                {% endfor %}
-              </table>
+            <div class="tab-pane" id="tab-vm-oe">
+              {% if vm_oe %}
+              <p class="text-muted">{{ vm_t.text_oe_help }}</p>
+              <div class="vm-oe">{% for o in vm_oe %}<a href="{{ o.href }}">{{ o.oe }}</a>{% endfor %}</div>
+              {% else %}<p class="text-muted">{{ vm_t.text_oe_empty }}</p>{% endif %}
+            </div>
+            <div class="tab-pane" id="tab-vm-analogs">
+              {% if vm_analogs %}
+              <div class="vm-an">{% for a in vm_analogs %}
+                <div class="vm-an-row">
+                  <a class="vm-an-img" href="{{ a.href }}"><img src="{{ a.thumb }}" alt="{{ a.name }}" loading="lazy"></a>
+                  <div class="vm-an-info"><a href="{{ a.href }}">{{ a.name }}</a>{% if a.vm_stock %}<div class="vm-stock vm-stock-{{ a.vm_stock_class }}">{{ a.vm_stock }}</div>{% endif %}</div>
+                  <div class="vm-an-price">{% if a.special %}<s>{{ a.price }}</s> <b>{{ a.special }}</b>{% else %}<b>{{ a.price }}</b>{% endif %}</div>
+                  <button type="button" class="vm-an-buy" onclick="cart.add('{{ a.product_id }}', '{{ a.minimum }}');" aria-label="{{ vm_t.text_buy }}"><i class="fa fa-shopping-cart"></i></button>
+                </div>{% endfor %}
+              </div>
+              {% else %}<p class="text-muted">{{ vm_t.text_an_empty }}</p>{% endif %}
+              {% if vm_analogs_more %}<p class="vm-an-more">{{ vm_t.text_an_more|format(vm_analogs_more) }}</p>{% endif %}
+            </div>
+            {% if vm_images_all|length > 1 %}
+            <div class="tab-pane" id="tab-vm-photos">
+              <div class="vm-ph">{% for im in vm_images_all %}<a href="{{ im.popup }}" class="vm-ph-item" target="_blank" rel="noopener"><img src="{{ im.popup }}" alt="{{ heading_title }}" loading="lazy"></a>{% endfor %}</div>
             </div>
             {% endif %}
             {% if review_status %}
