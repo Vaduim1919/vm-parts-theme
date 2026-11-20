@@ -1220,3 +1220,18 @@ body.vm a.vm-sg-all{display:flex;justify-content:center;align-items:center;gap:6
   .vm-sg-right{flex-direction:column;align-items:flex-end;gap:4px}
   #search .vm-sg-buy{width:34px;height:30px}
 }
+
+/* ---------- 1.5.2 opening hours ---------- */
+.vm-sched{margin-top:14px}
+.vm-sched-status{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;margin-bottom:8px}
+.vm-sched-status i,.vm-top-status i{width:8px;height:8px;border-radius:50%;flex:0 0 8px;display:inline-block}
+.vm-sched-status.is-open{color:#4ade80}.vm-sched-status.is-open i{background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.18)}
+.vm-sched-status.is-closed{color:#f87171}.vm-sched-status.is-closed i{background:#f87171;box-shadow:0 0 0 4px rgba(248,113,113,.18)}
+.vm-sched-days{border-collapse:collapse;font-size:13px;color:rgba(255,255,255,.62)}
+.vm-sched-days td{padding:2px 16px 2px 0;white-space:nowrap}
+.vm-sched-days tr.is-today td{color:#fff;font-weight:700}
+.vm-sched small{display:block;margin-top:8px;color:rgba(255,255,255,.5);font-size:12px}
+.vm-footer-addr{margin-top:6px}
+.vm-top-status{display:inline-flex;align-items:center;gap:6px;font-weight:500}
+.vm-top-status.is-open{color:var(--vm-green-dark)}.vm-top-status.is-open i{background:var(--vm-green)}
+.vm-top-status.is-closed{color:var(--vm-red)}.vm-top-status.is-closed i{background:var(--vm-red)}

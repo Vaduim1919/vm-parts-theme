@@ -308,7 +308,8 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			'telegram'   => $telegram,
 			'instagram'  => (string)$this->config->get('module_vm_theme_instagram'),
 			'facebook'   => (string)$this->config->get('module_vm_theme_facebook'),
-			'hours'      => (string)$this->config->get('module_vm_theme_hours'),
+			'hours'      => $this->hoursLine(),
+			'sched'      => $this->schedule(),
 			'benefits'   => $benefits,
 			'head_code'  => html_entity_decode((string)$this->config->get('module_vm_theme_head_code'), ENT_QUOTES, 'UTF-8'),
 			'body_code'  => html_entity_decode((string)$this->config->get('module_vm_theme_body_code'), ENT_QUOTES, 'UTF-8'),
@@ -316,6 +317,107 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			// cache-busting for the stylesheet after theme updates
 			'version'    => is_file(DIR_TEMPLATE . 'vm_parts/VERSION') ? trim(file_get_contents(DIR_TEMPLATE . 'vm_parts/VERSION')) : '1'
 		);
+	}
+
+	// weekly schedule from the theme settings; [] when not filled in
+	private function schedule() {
+		static $out = null;
+
+		if ($out !== null) {
+			return $out;
+		}
+
+		$raw = $this->config->get('module_vm_theme_schedule');
+		$out = array();
+
+		if (!is_array($raw)) {
+			return $out;
+		}
+
+		$t = $this->texts();
+		$any = false;
+		$tz = new DateTimeZone('Europe/Kiev');
+		$now = new DateTime('now', $tz);
+		$dow = (int)$now->format('N') - 1; // 0 = Monday
+		$min = (int)$now->format('G') * 60 + (int)$now->format('i');
+		$toMin = function ($hm) {
+			return preg_match('/^(\d{1,2}):(\d{2})$/', trim((string)$hm), $m) ? (int)$m[1] * 60 + (int)$m[2] : -1;
+		};
+
+		for ($d = 0; $d < 7; $d++) {
+			$r = isset($raw[$d]) && is_array($raw[$d]) ? $raw[$d] : array();
+			$off = !empty($r['off']);
+			$from = isset($r['from']) ? trim($r['from']) : '';
+			$to = isset($r['to']) ? trim($r['to']) : '';
+			$valid = !$off && $toMin($from) >= 0 && $toMin($to) > $toMin($from);
+
+			if ($off || $valid) {
+				$any = true;
+			}
+
+			$out[] = array('day' => $t['text_day_' . $d], 'short' => $t['text_dshort_' . $d], 'open' => $valid, 'from' => $from, 'to' => $to, 'today' => $d == $dow,
+				'text' => $valid ? $from . ' – ' . $to : $t['text_sched_off']);
+		}
+
+		if (!$any) {
+			return $out = array();
+		}
+
+		// status now
+		$today = $out[$dow];
+		$status = array('open' => false, 'text' => '');
+
+		if ($today['open'] && $min >= $toMin($today['from']) && $min < $toMin($today['to'])) {
+			$status = array('open' => true, 'text' => sprintf($t['text_sched_open'], $today['to']));
+		} else {
+			for ($i = 0; $i < 7; $i++) {
+				$d = ($dow + $i) % 7;
+
+				if ($out[$d]['open'] && ($i > 0 || $min < $toMin($out[$d]['from']))) {
+					$when = $i == 0 ? $t['text_sched_today'] : ($i == 1 ? $t['text_sched_tomorrow'] : $out[$d]['day']);
+					$status = array('open' => false, 'text' => sprintf($t['text_sched_closed'], mb_strtolower($when, 'UTF-8'), $out[$d]['from']));
+					break;
+				}
+			}
+
+			if ($status['text'] === '') {
+				$status['text'] = $t['text_sched_closed0'];
+			}
+		}
+
+		$out = array('days' => $out, 'status' => $status);
+
+		return $out;
+	}
+
+	// "Пн–Пт 09:00–18:00, Сб 09:00–14:00" from the schedule, or the free-text setting
+	private function hoursLine() {
+		$text = trim((string)$this->config->get('module_vm_theme_hours'));
+		$s = $this->schedule();
+
+		if ($text !== '' || !$s) {
+			return $text;
+		}
+
+		$parts = array();
+		$days = $s['days'];
+
+		for ($i = 0; $i < 7; $i++) {
+			if (!$days[$i]['open']) {
+				continue;
+			}
+
+			$j = $i;
+
+			while ($j + 1 < 7 && $days[$j + 1]['open'] && $days[$j + 1]['text'] === $days[$i]['text']) {
+				$j++;
+			}
+
+			$parts[] = $days[$i]['short'] . ($j > $i ? '–' . $days[$j]['short'] : '') . ' ' . str_replace(' – ', '–', $days[$i]['text']);
+			$i = $j;
+		}
+
+		return implode(', ', $parts);
 	}
 
 	private function header(&$data) {

@@ -4,8 +4,14 @@
       <div class="vm-footer-name">{{ vm_name }}</div>
       {% if vm.phone %}<a class="vm-footer-phone" href="{{ vm.phone_href }}">{{ vm.phone }}</a>{% endif %}
       {% if vm.phone2 %}<a class="vm-footer-phone" href="{{ vm.phone2_href }}">{{ vm.phone2 }}</a>{% endif %}
-      {% if vm_open %}<div>{{ vm_open }}</div>{% endif %}
-      {% if vm_address %}<div>{{ vm_address }}</div>{% endif %}
+      {% if vm_address %}<div class="vm-footer-addr">{{ vm_address }}</div>{% endif %}
+      {% if vm.sched %}
+      <div class="vm-sched">
+        <div class="vm-sched-status {% if vm.sched.status.open %}is-open{% else %}is-closed{% endif %}"><i></i>{{ vm.sched.status.text }}</div>
+        <table class="vm-sched-days">{% for d in vm.sched.days %}<tr{% if d.today %} class="is-today"{% endif %}><td>{{ d.day }}</td><td>{{ d.text }}</td></tr>{% endfor %}</table>
+        <small>{{ vm_t.text_sched_order }}</small>
+      </div>
+      {% elseif vm_open %}<div>{{ vm_open }}</div>{% endif %}
     </div>
     {% if informations %}
     <div>

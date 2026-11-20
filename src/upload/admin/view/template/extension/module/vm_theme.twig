@@ -75,6 +75,17 @@
               <div class="form-group"><label class="col-sm-3 control-label" for="i-ig">{{ entry_instagram }}</label><div class="col-sm-9"><input id="i-ig" type="text" name="module_vm_theme_instagram" value="{{ module_vm_theme_instagram }}" class="form-control"></div></div>
               <div class="form-group"><label class="col-sm-3 control-label" for="i-fb">{{ entry_facebook }}</label><div class="col-sm-9"><input id="i-fb" type="text" name="module_vm_theme_facebook" value="{{ module_vm_theme_facebook }}" class="form-control"></div></div>
               <div class="form-group"><label class="col-sm-3 control-label" for="i-hours">{{ entry_hours }}</label><div class="col-sm-9"><input id="i-hours" type="text" name="module_vm_theme_hours" value="{{ module_vm_theme_hours }}" class="form-control" placeholder="Пн–Сб 9:00–18:00"></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label">{{ entry_schedule }}</label><div class="col-sm-9">
+                <table class="table table-condensed" style="max-width:520px;margin-bottom:4px">
+                  {% for r in schedule_rows %}
+                  <tr><td style="vertical-align:middle;width:120px"><b>{{ r.name }}</b></td>
+                    <td><input type="time" name="module_vm_theme_schedule[{{ r.d }}][from]" value="{{ r.from }}" class="form-control input-sm"></td>
+                    <td style="vertical-align:middle">–</td>
+                    <td><input type="time" name="module_vm_theme_schedule[{{ r.d }}][to]" value="{{ r.to }}" class="form-control input-sm"></td>
+                    <td style="vertical-align:middle"><label class="checkbox-inline"><input type="checkbox" name="module_vm_theme_schedule[{{ r.d }}][off]" value="1" {% if r.off %}checked{% endif %}> {{ text_day_off }}</label></td></tr>
+                  {% endfor %}
+                </table>
+                <p class="help-block">{{ help_schedule }}</p></div></div>
               <div class="form-group"><label class="col-sm-3 control-label" for="i-fallback">{{ entry_fallback }}</label><div class="col-sm-9">
                 <select id="i-fallback" name="module_vm_theme_fallback" class="form-control"><option value="">—</option>{% for dir in directories %}<option value="{{ dir }}" {% if dir == module_vm_theme_fallback %}selected{% endif %}>{{ dir }}</option>{% endfor %}</select>
                 <p class="help-block">{{ help_fallback }}</p></div></div>

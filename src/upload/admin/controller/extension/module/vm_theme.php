@@ -68,6 +68,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			'module_vm_theme_instagram' => '',
 			'module_vm_theme_facebook'  => '',
 			'module_vm_theme_hours'     => '',
+			'module_vm_theme_schedule'  => array(),
 			'module_vm_theme_benefits'  => '',
 			'module_vm_theme_hero'      => array(),
 			'module_vm_theme_hero_off'  => '',
@@ -86,6 +87,14 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			} else {
 				$data[$key] = $default;
 			}
+		}
+
+		$sched = is_array($data['module_vm_theme_schedule']) ? $data['module_vm_theme_schedule'] : array();
+		$data['schedule_rows'] = array();
+
+		for ($d = 0; $d < 7; $d++) {
+			$r = isset($sched[$d]) && is_array($sched[$d]) ? $sched[$d] : array();
+			$data['schedule_rows'][] = array('d' => $d, 'name' => $this->language->get('text_day_' . $d), 'from' => isset($r['from']) ? $r['from'] : '', 'to' => isset($r['to']) ? $r['to'] : '', 'off' => !empty($r['off']));
 		}
 
 		// hero slides: three fixed slots with the OpenCart image manager
