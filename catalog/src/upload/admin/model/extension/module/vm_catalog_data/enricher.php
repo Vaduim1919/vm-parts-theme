@@ -675,6 +675,129 @@ class VmCatalogEnricher {
 		}
 	}
 
+	// ------------------------------------------------------------ characteristics -> OpenCart attributes (1.5.0)
+	// BM returns technical parameters in different shapes depending on the group; read the usual ones.
+	public static function extractProps($p) {
+		$out = array();
+		$skip = '/^(id|uuid|article|brand|name|title|description|images?|default_image|cars|oe|analogs|nodes|weight|barcodes|multiplicity|price|prices|currency|warehouses|stock|quantity|badges|url|slug)$/i';
+
+		foreach (array('properties', 'characteristics', 'characteristic', 'specifications', 'specs', 'params', 'parameters', 'attributes', 'criteria', 'details', 'technical', 'tech', 'group_filters', 'filters', 'gf') as $key) {
+			if (empty($p[$key]) || !is_array($p[$key])) {
+				continue;
+			}
+
+			foreach ($p[$key] as $k => $v) {
+				$name = $val = '';
+
+				if (is_array($v)) {
+					foreach (array('name', 'title', 'key', 'label', 'parameter', 'property') as $nk) {
+						if (isset($v[$nk]) && is_scalar($v[$nk])) {
+							$name = (string)$v[$nk];
+							break;
+						}
+					}
+
+					foreach (array('value', 'val', 'text', 'values', 'value_name') as $vk) {
+						if (isset($v[$vk])) {
+							$val = is_array($v[$vk]) ? implode(', ', array_filter(array_map(function ($x) {
+								return is_array($x) ? (isset($x['value']) && is_scalar($x['value']) ? $x['value'] : (isset($x['name']) && is_scalar($x['name']) ? $x['name'] : '')) : (is_scalar($x) ? $x : '');
+							}, $v[$vk]))) : (is_scalar($v[$vk]) ? (string)$v[$vk] : '');
+							break;
+						}
+					}
+
+					if ($val !== '' && isset($v['unit']) && is_scalar($v['unit']) && $v['unit'] !== '') {
+						$val .= ' ' . $v['unit'];
+					}
+				} elseif (is_string($k) && is_scalar($v)) {
+					$name = $k;
+					$val = (string)$v;
+				} elseif (is_string($v) && strpos($v, ':') !== false) {
+					list($name, $val) = array_map('trim', explode(':', $v, 2));
+				}
+
+				$name = trim(preg_replace('/\s+/u', ' ', strip_tags($name)), " :\t");
+				$val = trim(preg_replace('/\s+/u', ' ', strip_tags($val)));
+
+				if ($name === '' || $val === '' || preg_match($skip, $name) || mb_strlen($name) > 64 || mb_strlen($val) > 128) {
+					continue;
+				}
+
+				$name = mb_strtoupper(mb_substr($name, 0, 1)) . mb_substr($name, 1);
+				$out[$name] = $val;
+
+				if (count($out) >= 30) {
+					break 2;
+				}
+			}
+		}
+
+		return $out;
+	}
+
+	private function attrGroupId() {
+		$p = DB_PREFIX;
+		$name = 'Характеристики';
+		$q = $this->db->query("SELECT attribute_group_id FROM `{$p}attribute_group_description` WHERE name = '" . $this->db->escape($name) . "' LIMIT 1");
+
+		if ($q->num_rows) {
+			return (int)$q->row['attribute_group_id'];
+		}
+
+		$this->db->query("INSERT INTO `{$p}attribute_group` SET sort_order = 1");
+		$id = (int)$this->db->getLastId();
+
+		foreach ($this->db->query("SELECT language_id FROM `{$p}language`")->rows as $l) {
+			$this->db->query("INSERT INTO `{$p}attribute_group_description` SET attribute_group_id = '" . $id . "', language_id = '" . (int)$l['language_id'] . "', name = '" . $this->db->escape($name) . "'");
+		}
+
+		return $id;
+	}
+
+	private function attrId($group, $name) {
+		$p = DB_PREFIX;
+
+		if (!isset($this->models['attr'][$name])) {
+			$q = $this->db->query("SELECT a.attribute_id FROM `{$p}attribute` a JOIN `{$p}attribute_description` ad ON (ad.attribute_id = a.attribute_id) WHERE a.attribute_group_id = '" . (int)$group . "' AND ad.name = '" . $this->db->escape($name) . "' LIMIT 1");
+
+			if ($q->num_rows) {
+				$id = (int)$q->row['attribute_id'];
+			} else {
+				$this->db->query("INSERT INTO `{$p}attribute` SET attribute_group_id = '" . (int)$group . "', sort_order = 0");
+				$id = (int)$this->db->getLastId();
+
+				foreach ($this->db->query("SELECT language_id FROM `{$p}language`")->rows as $l) {
+					$this->db->query("INSERT INTO `{$p}attribute_description` SET attribute_id = '" . $id . "', language_id = '" . (int)$l['language_id'] . "', name = '" . $this->db->escape($name) . "'");
+				}
+			}
+
+			$this->models['attr'][$name] = $id;
+		}
+
+		return $this->models['attr'][$name];
+	}
+
+	public function saveProps($product_id, $props) {
+		if (!$props) {
+			return 0;
+		}
+
+		$p = DB_PREFIX;
+		$group = $this->attrGroupId();
+		$this->db->query("DELETE pa FROM `{$p}product_attribute` pa JOIN `{$p}attribute` a ON (a.attribute_id = pa.attribute_id) WHERE pa.product_id = '" . (int)$product_id . "' AND a.attribute_group_id = '" . $group . "'");
+		$langs = $this->db->query("SELECT language_id FROM `{$p}language`")->rows;
+
+		foreach ($props as $name => $val) {
+			$aid = $this->attrId($group, $name);
+
+			foreach ($langs as $l) {
+				$this->db->query("REPLACE INTO `{$p}product_attribute` SET product_id = '" . (int)$product_id . "', attribute_id = '" . $aid . "', language_id = '" . (int)$l['language_id'] . "', text = '" . $this->db->escape($val) . "'");
+			}
+		}
+
+		return count($props);
+	}
+
 	public function saveBm($product_id, $uuid, $local_qty) {
 		$r = $this->bm('GET', 'product/' . rawurlencode($uuid), array('products_as' => 'obj', 'oe' => 'short', 'output_field' => 'all'));
 
@@ -691,6 +814,7 @@ class VmCatalogEnricher {
 			'cars'    => $this->saveCars($product_id, isset($p['cars']) ? $p['cars'] : array()),
 			'oe'      => $this->saveOe($product_id, isset($p['oe']) ? $p['oe'] : array()),
 			'analogs' => $this->saveAnalogs($product_id, isset($p['analogs']) ? $p['analogs'] : array()),
+			'props'   => $this->saveProps($product_id, self::extractProps($p)),
 			'images'  => 0,
 			'node'    => isset($p['nodes']) ? mb_substr(is_array($p['nodes']) ? implode(' / ', array_map(array(__CLASS__, 'str'), $p['nodes'])) : (string)$p['nodes'], 0, 255) : '',
 			'cars_json' => json_encode(isset($p['cars']) ? $p['cars'] : array(), JSON_UNESCAPED_UNICODE)
@@ -704,6 +828,7 @@ class VmCatalogEnricher {
 			'barcodes'     => isset($p['barcodes']) && is_array($p['barcodes']) ? array_slice(array_values(array_filter($p['barcodes'], 'is_string')), 0, 5) : array(),
 			'multiplicity' => isset($p['multiplicity']) ? (int)$p['multiplicity'] : 1,
 			'images'       => count($imgs),
+			'keys'         => array_slice(array_keys($p), 0, 60),
 			'description'  => isset($p['description']) && is_string($p['description']) ? mb_substr(trim(strip_tags($p['description'])), 0, 4000) : ''
 		), JSON_UNESCAPED_UNICODE);
 

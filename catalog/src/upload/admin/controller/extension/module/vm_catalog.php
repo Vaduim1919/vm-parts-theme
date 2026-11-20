@@ -139,6 +139,33 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		$data['step_url'] = $this->ajaxUrl('step');
 		$data['categories_action'] = $this->link('categories');
 		$data['categorize_url'] = $this->ajaxUrl('categorize');
+		// markups per supplier and brand
+		$rules = $this->model_extension_module_vm_catalog->markupRules();
+		$suppliers = array();
+
+		foreach ((array)$this->model_extension_module_vm_catalog->stats() as $st) {
+			$suppliers[$st['supplier']] = array('supplier' => $st['supplier'], 'total' => (int)$st['total'], 'markup' => '');
+		}
+
+		$brand_rules = array();
+
+		foreach ($rules as $r) {
+			if ($r['brand_key'] === '') {
+				if (!isset($suppliers[$r['supplier']])) {
+					$suppliers[$r['supplier']] = array('supplier' => $r['supplier'], 'total' => 0, 'markup' => '');
+				}
+
+				$suppliers[$r['supplier']]['markup'] = rtrim(rtrim($r['markup'], '0'), '.');
+			} else {
+				$brand_rules[] = array('supplier' => $r['supplier'], 'brand' => $r['brand'], 'markup' => rtrim(rtrim($r['markup'], '0'), '.'));
+			}
+		}
+
+		$data['markup_suppliers'] = array_values($suppliers);
+		$data['markup_brands'] = $brand_rules;
+		$data['markup_save_url'] = $this->ajaxUrl('markupSave');
+		$data['markup_brands_url'] = $this->ajaxUrl('markupBrands');
+		$data['markup_recalc_url'] = $this->ajaxUrl('markupRecalc');
 		$data['checkout_action'] = $this->link('stockCheckout');
 		$data['check_action'] = $this->link('checkUpdate');
 		$data['update_action'] = $this->link('update');
@@ -414,6 +441,38 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		}
 
 		$this->response->redirect($this->link());
+	}
+
+	public function markupSave() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if ($this->request->server['REQUEST_METHOD'] !== 'POST' || !$this->canModify()) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$rows = json_decode(html_entity_decode(isset($this->request->post['rules']) ? $this->request->post['rules'] : '[]', ENT_QUOTES, 'UTF-8'), true);
+		$this->json(array('saved' => $this->model_extension_module_vm_catalog->saveMarkups(is_array($rows) ? $rows : array())));
+	}
+
+	public function markupBrands() {
+		$this->load->model($this->route);
+		$supplier = isset($this->request->get['supplier']) ? (string)$this->request->get['supplier'] : '';
+		$q = isset($this->request->get['q']) ? html_entity_decode((string)$this->request->get['q'], ENT_QUOTES, 'UTF-8') : '';
+		$this->json(array('brands' => $this->model_extension_module_vm_catalog->supplierBrands($supplier, $q)));
+	}
+
+	public function markupRecalc() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify() || !$this->user->hasPermission('modify', 'catalog/product')) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		@set_time_limit(120);
+		$after = isset($this->request->get['after']) ? (int)$this->request->get['after'] : 0;
+		$this->json($this->model_extension_module_vm_catalog->recalcPrices($after));
 	}
 
 	public function categorize() {

@@ -86,6 +86,41 @@
       </div>
     </div>
 
+    <!-- markups -->
+    <div class="panel panel-default" id="vm-mk">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-percent"></i> {{ text_mk_title }}</h3></div>
+      <div class="panel-body">
+        <p>{{ text_mk_help }}</p>
+        <div class="row">
+          <div class="col-md-5">
+            <h4>{{ text_mk_suppliers }}</h4>
+            <table class="table table-bordered table-condensed" id="vm-mk-sup">
+              <thead><tr><th>{{ column_supplier }}</th><th class="text-right">{{ column_total }}</th><th style="width:130px">{{ text_mk_percent }}</th></tr></thead>
+              <tbody>
+              {% for s in markup_suppliers %}<tr data-supplier="{{ s.supplier }}"><td><b>{{ s.supplier }}</b></td><td class="text-right">{{ s.total }}</td><td><div class="input-group input-group-sm"><input type="text" class="form-control vm-mk-sv" value="{{ s.markup }}" placeholder="{{ module_vm_catalog_markup }}"><span class="input-group-addon">%</span></div></td></tr>
+              {% else %}<tr><td colspan="3" class="text-muted">{{ text_mk_no_sup }}</td></tr>{% endfor %}
+              </tbody>
+            </table>
+            <p class="help-block">{{ text_mk_default|format(module_vm_catalog_markup) }}</p>
+          </div>
+          <div class="col-md-7">
+            <h4>{{ text_mk_brands }}</h4>
+            <table class="table table-bordered table-condensed" id="vm-mk-br">
+              <thead><tr><th style="width:130px">{{ column_supplier }}</th><th>{{ text_mk_brand }}</th><th style="width:130px">{{ text_mk_percent }}</th><th style="width:40px"></th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <button type="button" class="btn btn-default btn-sm" id="vm-mk-add"><i class="fa fa-plus"></i> {{ text_mk_add }}</button>
+            <datalist id="vm-mk-dl"></datalist>
+          </div>
+        </div>
+        <hr>
+        <button type="button" class="btn btn-primary" id="vm-mk-save"><i class="fa fa-save"></i> {{ text_mk_save }}</button>
+        <button type="button" class="btn btn-success" id="vm-mk-recalc"><i class="fa fa-refresh"></i> {{ text_mk_save_recalc }}</button>
+        <div id="vm-mk-status" style="margin-top:12px;max-width:720px"></div>
+        <div class="progress" id="vm-mk-bar" style="display:none;max-width:720px"><div class="progress-bar progress-bar-striped active" style="width:0%"></div></div>
+      </div>
+    </div>
+
     <!-- import -->
     <div class="panel panel-primary">
       <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-upload"></i> {{ text_imp_title }}</h3></div>
@@ -305,6 +340,65 @@
     }).fail(function () { b.prop('disabled', false); utrMsg(T.network, 'warning'); });
   });
 
+
+  // ---------- markups
+  (function () {
+    var sups = {{ markup_suppliers|json_encode|raw }}, rules = {{ markup_brands|json_encode|raw }};
+    var tb = $('#vm-mk-br tbody'), dlTimer;
+    function supSelect(v) {
+      var h = '<select class="form-control input-sm vm-mk-bs">';
+      sups.forEach(function (s) { h += '<option value="' + s.supplier + '"' + (s.supplier === v ? ' selected' : '') + '>' + s.supplier + '</option>'; });
+      return h + '</select>';
+    }
+    function row(r) {
+      var tr = $('<tr><td>' + supSelect(r.supplier) + '</td><td><input type="text" class="form-control input-sm vm-mk-bb" list="vm-mk-dl" autocomplete="off"></td><td><div class="input-group input-group-sm"><input type="text" class="form-control vm-mk-bv"><span class="input-group-addon">%</span></div></td><td><button type="button" class="btn btn-danger btn-xs vm-mk-del"><i class="fa fa-times"></i></button></td></tr>');
+      tr.find('.vm-mk-bb').val(r.brand || ''); tr.find('.vm-mk-bv').val(r.markup || '');
+      tb.append(tr);
+    }
+    rules.forEach(row);
+    $('#vm-mk-add').on('click', function () { if (!sups.length) return; row({ supplier: sups[0].supplier, brand: '', markup: '' }); tb.find('.vm-mk-bb').last().focus(); });
+    tb.on('click', '.vm-mk-del', function () { $(this).closest('tr').remove(); });
+    tb.on('input focus', '.vm-mk-bb', function () {
+      var inp = $(this), sup = inp.closest('tr').find('.vm-mk-bs').val();
+      clearTimeout(dlTimer);
+      dlTimer = setTimeout(function () {
+        $.getJSON('{{ markup_brands_url|e('js') }}', { supplier: sup, q: inp.val() }, function (j) {
+          var h = ''; (j.brands || []).forEach(function (b) { h += '<option value="' + $('<div>').text(b.brand).html() + '">' + b.total + '</option>'; });
+          $('#vm-mk-dl').html(h);
+        });
+      }, 250);
+    });
+    function collect() {
+      var out = [];
+      $('#vm-mk-sup tbody tr[data-supplier]').each(function () { var v = $.trim($(this).find('.vm-mk-sv').val()); if (v !== '') out.push({ supplier: $(this).data('supplier'), brand: '', markup: v }); });
+      tb.find('tr').each(function () { var b = $.trim($(this).find('.vm-mk-bb').val()), v = $.trim($(this).find('.vm-mk-bv').val()); if (b !== '' && v !== '') out.push({ supplier: $(this).find('.vm-mk-bs').val(), brand: b, markup: v }); });
+      return out;
+    }
+    function save(cb) {
+      $('#vm-mk-status').html('<div class="alert alert-info">{{ text_mk_saving|e('js') }}</div>');
+      $.post('{{ markup_save_url|e('js') }}', { rules: JSON.stringify(collect()) }, null, 'json').done(function (j) {
+        if (j.error) { $('#vm-mk-status').html('<div class="alert alert-danger">' + j.error + '</div>'); return; }
+        $('#vm-mk-status').html('<div class="alert alert-success">{{ text_mk_saved|e('js') }}'.replace('%s', j.saved) + '</div>');
+        if (cb) cb();
+      }).fail(function (x) { $('#vm-mk-status').html('<div class="alert alert-danger">' + $('<div>').text(x.responseText.substr(0, 300)).html() + '</div>'); });
+    }
+    $('#vm-mk-save').on('click', function () { save(); });
+    $('#vm-mk-recalc').on('click', function () {
+      var btn = $(this).prop('disabled', true), changed = 0, bar = $('#vm-mk-bar').show().find('.progress-bar');
+      save(function () {
+        (function go(after) {
+          $.ajax({ url: '{{ markup_recalc_url|e('js') }}', data: { after: after }, dataType: 'json', timeout: 180000 }).done(function (j) {
+            if (j.error) { $('#vm-mk-status').html('<div class="alert alert-danger">' + j.error + '</div>'); btn.prop('disabled', false); return; }
+            changed += j.changed || 0;
+            if (j.total) bar.css('width', Math.round(100 * (j.done ? j.total : j.pos) / j.total) + '%');
+            if (j.done) { bar.css('width', '100%'); $('#vm-mk-status').html('<div class="alert alert-success">{{ text_mk_recalc_done|e('js') }}'.replace('%s', changed) + '</div>'); btn.prop('disabled', false); setTimeout(function () { $('#vm-mk-bar').hide(); }, 1500); return; }
+            $('#vm-mk-status').html('<div class="alert alert-info">{{ text_mk_recalc_run|e('js') }}'.replace('%s', j.pos).replace('%s', j.total) + '</div>');
+            go(j.after);
+          }).fail(function () { setTimeout(function () { go(after); }, 4000); });
+        })(0);
+      });
+    });
+  })();
 })(jQuery);
 //--></script>
 {{ footer }}

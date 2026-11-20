@@ -71,6 +71,146 @@ class ModelExtensionModuleVmCatalog extends Model {
 		return $q->rows;
 	}
 
+	// ------------------------------------------------------------ markups (1.5.0)
+	// one row per supplier (brand_key '') + optional rows per supplier & brand
+
+	public function installMarkup() {
+		$this->db->query("CREATE TABLE IF NOT EXISTS `" . DB_PREFIX . "vm_catalog_markup` (
+			`supplier` VARCHAR(32) NOT NULL,
+			`brand_key` VARCHAR(64) NOT NULL DEFAULT '',
+			`brand` VARCHAR(64) NOT NULL DEFAULT '',
+			`markup` DECIMAL(7,2) NOT NULL DEFAULT '0.00',
+			PRIMARY KEY (`supplier`, `brand_key`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+	}
+
+	public function markupRules() {
+		$this->installMarkup();
+
+		return $this->db->query("SELECT supplier, brand_key, brand, markup FROM `" . DB_PREFIX . "vm_catalog_markup` ORDER BY supplier, brand_key = '' DESC, brand")->rows;
+	}
+
+	public function brandKey($brand) {
+		return $this->key(preg_replace('/\s+/u', ' ', trim((string)$brand)));
+	}
+
+	// $rows: [{supplier, brand, markup}], brand '' = supplier default
+	public function saveMarkups($rows) {
+		$this->installMarkup();
+		$clean = array();
+
+		foreach ((array)$rows as $r) {
+			if (!is_array($r)) {
+				continue;
+			}
+
+			$supplier = substr(preg_replace('/[^a-z0-9_\-]/', '', mb_strtolower(trim(isset($r['supplier']) ? $r['supplier'] : ''))), 0, 32);
+			$brand = mb_substr(trim(preg_replace('/\s+/u', ' ', isset($r['brand']) ? $r['brand'] : '')), 0, 64);
+			$val = trim(str_replace(',', '.', isset($r['markup']) ? (string)$r['markup'] : ''));
+
+			if ($supplier === '' || $val === '' || !is_numeric($val)) {
+				continue;
+			}
+
+			$bk = $brand === '' ? '' : $this->brandKey($brand);
+			$clean[$supplier . '|' . $bk] = array($supplier, $bk, $brand, max(-90, min(500, (float)$val)));
+		}
+
+		$this->db->query("DELETE FROM `" . DB_PREFIX . "vm_catalog_markup`");
+
+		foreach ($clean as $c) {
+			$this->db->query("INSERT INTO `" . DB_PREFIX . "vm_catalog_markup` SET supplier = '" . $this->db->escape($c[0]) . "', brand_key = '" . $this->db->escape($c[1]) . "', brand = '" . $this->db->escape($c[2]) . "', markup = '" . (float)$c[3] . "'");
+		}
+
+		unset($this->memo['markup']);
+
+		return count($clean);
+	}
+
+	// percent for this supplier/brand: brand rule > supplier rule > module default
+	public function markupFor($supplier, $brand_key, $default) {
+		if (!isset($this->memo['markup'])) {
+			$this->memo['markup'] = array();
+
+			if ($this->db->query("SHOW TABLES LIKE '" . $this->db->escape(DB_PREFIX . 'vm_catalog_markup') . "'")->num_rows) {
+				foreach ($this->db->query("SELECT supplier, brand_key, markup FROM `" . DB_PREFIX . "vm_catalog_markup`")->rows as $r) {
+					$this->memo['markup'][$r['supplier'] . '|' . $r['brand_key']] = (float)$r['markup'];
+				}
+			}
+		}
+
+		$m = $this->memo['markup'];
+
+		if ($brand_key !== '' && isset($m[$supplier . '|' . $brand_key])) {
+			return $m[$supplier . '|' . $brand_key];
+		}
+
+		if (isset($m[$supplier . '|'])) {
+			return $m[$supplier . '|'];
+		}
+
+		return (float)$default;
+	}
+
+	public function supplierBrands($supplier, $q = '') {
+		$where = "supplier = '" . $this->db->escape($supplier) . "'";
+
+		if ($q !== '') {
+			$where .= " AND brand LIKE '%" . $this->db->escape($q) . "%'";
+		}
+
+		return $this->db->query("SELECT brand, brand_key, COUNT(*) AS total FROM `" . DB_PREFIX . "vm_catalog_item` WHERE " . $where . " GROUP BY brand_key ORDER BY total DESC LIMIT 300")->rows;
+	}
+
+	// re-price existing products from stored purchase prices; batches by product_id
+	public function recalcPrices($after, $limit = 3000) {
+		$p = DB_PREFIX;
+		$default = (float)$this->config->get('module_vm_catalog_markup');
+		$round = (int)$this->config->get('module_vm_catalog_round');
+		$ids = array();
+
+		foreach ($this->db->query("SELECT DISTINCT product_id FROM `{$p}vm_catalog_item` WHERE product_id > '" . (int)$after . "' ORDER BY product_id LIMIT " . (int)$limit)->rows as $r) {
+			$ids[] = (int)$r['product_id'];
+		}
+
+		if (!$ids) {
+			$total = (int)$this->db->query("SELECT COUNT(DISTINCT product_id) AS n FROM `{$p}vm_catalog_item`")->row['n'];
+
+			return array('done' => true, 'after' => (int)$after, 'changed' => 0, 'total' => $total);
+		}
+
+		$best = array();
+
+		foreach ($this->db->query("SELECT product_id, supplier, brand_key, price_in, local_qty, remote_qty FROM `{$p}vm_catalog_item` WHERE product_id IN (" . implode(',', $ids) . ") AND price_in > 0")->rows as $r) {
+			$sell = round((float)$r['price_in'] * (1 + $this->markupFor($r['supplier'], $r['brand_key'], $default) / 100), $round);
+			$has = ((int)$r['local_qty'] + (int)$r['remote_qty']) > 0 ? 1 : 0;
+			$id = (int)$r['product_id'];
+
+			// items in stock win; among them the cheapest
+			if (!isset($best[$id]) || $has > $best[$id][1] || ($has == $best[$id][1] && $sell < $best[$id][0])) {
+				$best[$id] = array($sell, $has);
+			}
+		}
+
+		$changed = 0;
+
+		foreach (array_chunk($best, 500, true) as $chunk) {
+			$case = '';
+
+			foreach ($chunk as $id => $b) {
+				$case .= " WHEN " . (int)$id . " THEN " . (float)$b[0];
+			}
+
+			$this->db->query("UPDATE `{$p}product` SET price = CASE product_id" . $case . " END, date_modified = NOW() WHERE product_id IN (" . implode(',', array_keys($chunk)) . ") AND ABS(price - CASE product_id" . $case . " END) > 0.004");
+			$changed += $this->db->countAffected();
+		}
+
+		$total = (int)$this->db->query("SELECT COUNT(DISTINCT product_id) AS n FROM `{$p}vm_catalog_item`")->row['n'];
+		$pos = (int)$this->db->query("SELECT COUNT(DISTINCT product_id) AS n FROM `{$p}vm_catalog_item` WHERE product_id <= '" . (int)end($ids) . "'")->row['n'];
+
+		return array('done' => false, 'after' => (int)end($ids), 'changed' => $changed, 'pos' => $pos, 'total' => $total);
+	}
+
 	// ------------------------------------------------------------ categories
 
 	public function categoryPreset() {
@@ -855,11 +995,11 @@ class ModelExtensionModuleVmCatalog extends Model {
 				continue;
 			}
 
-			$sell = round($price * $markup, (int)$opt['round']);
+			$bk = $this->key($brand);
+			$sell = round($price * (1 + $this->markupFor($supplier, $bk, $opt['markup']) / 100), (int)$opt['round']);
 			$qty = $local;
 			$status_id = $local ? (int)$this->config->get('config_stock_status_id') : $wait_status;
 			$ak = $this->key($article);
-			$bk = $this->key($brand);
 
 			$item = $this->db->query("SELECT product_id FROM `" . DB_PREFIX . "vm_catalog_item` WHERE supplier = '" . $this->db->escape($supplier) . "' AND art_key = '" . $this->db->escape($ak) . "' AND brand_key = '" . $this->db->escape($bk) . "'");
 			$product_id = $item->num_rows ? (int)$item->row['product_id'] : 0;
@@ -1380,6 +1520,11 @@ class ModelExtensionModuleVmCatalog extends Model {
 		if ($uuid) {
 			$r = $this->bm('GET', 'product/' . rawurlencode($uuid), array('products_as' => 'obj', 'oe' => 'short', 'output_field' => 'all', 'with_extra' => 'true'));
 			$add('Картка товару ' . $uuid, $r);
+
+			if (!empty($r['json']['product']) && is_array($r['json']['product'])) {
+				$this->enricher();
+				$add('Характеристики, які модуль розпізнав (підуть у фільтри)', array('code' => 200, 'body' => '', 'json' => array('props' => VmCatalogEnricher::extractProps($r['json']['product']), 'keys' => array_keys($r['json']['product']))));
+			}
 
 			$r = $this->bm('GET', 'product/' . rawurlencode($uuid) . '/images');
 			$add('Фото товару', $r);
