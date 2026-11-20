@@ -36,30 +36,50 @@
         {% endif %}</div>
       <hr>
       {% endif %}
-      {% if categories %}
-      <h3>{{ text_refine }}</h3>
-      {% if categories|length <= 5 %}
-      <div class="row">
-        <div class="col-sm-3">
-          <ul>
-            {% for category in categories %}
-            <li><a href="{{ category.href }}">{{ category.name }}</a></li>
-            {% endfor %}
-          </ul>
+      {% if vm_filters %}
+      <div class="vm-cat-layout">
+      <aside class="vm-filters" id="vm-filters" data-path="{{ vm_filters.path }}" data-reset="{{ vm_filters.reset }}">
+        <div class="vm-f-head"><b><i class="fa fa-sliders"></i> {{ vm_t.text_f_title }}</b><button type="button" class="vm-f-close" aria-label="×" onclick="vmFilters(false)">&times;</button></div>
+        <div class="vm-f-scroll">
+        {% if vm_filters.car %}
+        <label class="vm-f-car"><input type="checkbox" data-name="car" value="1"{% if vm_filters.car.on %} checked{% endif %}><span><i class="fa fa-car"></i> {{ vm_t.text_f_car }}<small>{{ vm_filters.car.label|e }}</small></span><em>{{ vm_filters.car.n }}</em></label>
+        {% endif %}
+        {% if vm_filters.price.max > vm_filters.price.min %}
+        <div class="vm-f-group">
+          <button type="button" class="vm-f-title">{{ vm_t.text_f_price }}<i class="fa fa-angle-up"></i></button>
+          <div class="vm-f-body vm-f-price" data-min="{{ vm_filters.price.min }}" data-max="{{ vm_filters.price.max }}">
+            <div class="vm-f-pin"><input type="number" class="vm-f-pmin" min="{{ vm_filters.price.min }}" max="{{ vm_filters.price.max }}" placeholder="{{ vm_filters.price.min }}" value="{{ vm_filters.price.from }}"><span>–</span><input type="number" class="vm-f-pmax" min="{{ vm_filters.price.min }}" max="{{ vm_filters.price.max }}" placeholder="{{ vm_filters.price.max }}" value="{{ vm_filters.price.to }}"></div>
+            <div class="vm-f-range"><div class="vm-f-track"><i></i></div><input type="range" class="vm-f-r1" min="{{ vm_filters.price.min }}" max="{{ vm_filters.price.max }}" value="{{ vm_filters.price.from ?: vm_filters.price.min }}"><input type="range" class="vm-f-r2" min="{{ vm_filters.price.min }}" max="{{ vm_filters.price.max }}" value="{{ vm_filters.price.to ?: vm_filters.price.max }}"></div>
+            <button type="button" class="vm-f-apply">{{ vm_t.text_f_apply }}</button>
+          </div>
         </div>
-      </div>
-      {% else %}
-      <div class="row">{% for category in categories|batch((categories|length / 4)|round(1, 'ceil')) %}
-        <div class="col-sm-3">
-          <ul>
-            {% for child in category %}
-            <li><a href="{{ child.href }}">{{ child.name }}</a></li>
-            {% endfor %}
-          </ul>
+        {% endif %}
+        {% for g in vm_filters.groups %}
+        <div class="vm-f-group{% if loop.index > 7 %} is-closed{% endif %}">
+          <button type="button" class="vm-f-title">{{ g.title|e }}<i class="fa fa-angle-up"></i></button>
+          <div class="vm-f-body">
+            {% if g.search %}<input type="text" class="vm-f-search" placeholder="{{ vm_t.text_f_search }}">{% endif %}
+            <ul>
+              {% for o in g.opts %}<li{% if loop.index > 7 and not o.on %} class="vm-f-x" hidden{% endif %}><label><input type="checkbox" data-name="{{ o.name }}" value="{{ o.value|e }}"{% if o.on %} checked{% endif %}><span>{{ o.label|e }}</span><em>{{ o.n }}</em></label></li>{% endfor %}
+            </ul>
+            {% if g.opts|length > 7 %}<button type="button" class="vm-f-more" data-more="{{ vm_t.text_f_more|format(g.opts|length - 7) }}" data-less="{{ vm_t.text_f_less }}">{{ vm_t.text_f_more|format(g.opts|length - 7) }} <i class="fa fa-angle-down"></i></button>{% endif %}
+          </div>
         </div>
-        {% endfor %}</div>
-      <br/>
+        {% endfor %}
+        </div>
+        <div class="vm-f-foot"><button type="button" class="vm-f-show" onclick="vmFilters(false)">{{ vm_t.text_f_show }}</button></div>
+      </aside>
+      <div class="vm-cat-main">
+        <div class="vm-f-bar">
+          <button type="button" class="vm-f-open" onclick="vmFilters(true)"><i class="fa fa-sliders"></i> {{ vm_t.text_f_title }}{% if vm_filters.count %} <b>{{ vm_filters.count }}</b>{% endif %}</button>
+          {% if vm_filters.chips %}
+          <div class="vm-f-chips">{% for c in vm_filters.chips %}<a href="{{ c.href }}" class="vm-f-chip">{{ c.text|e }} <i class="fa fa-times"></i></a>{% endfor %}<a href="{{ vm_filters.reset }}" class="vm-f-resetall">{{ vm_t.text_f_reset }}</a></div>
+          {% endif %}
+          {% if vm_filter_total is defined %}<span class="vm-f-found">{{ vm_t.text_f_found|format(vm_filter_total) }}</span>{% endif %}
+        </div>
       {% endif %}
+      {% if categories %}
+      <div class="vm-subcats">{% for category in categories %}<a href="{{ category.href }}">{{ category.name }}</a>{% endfor %}</div>
       {% endif %}
       {% if products %}
       <div class="row">
@@ -129,6 +149,7 @@
         <div class="pull-right"><a href="{{ continue }}" class="btn btn-primary">{{ button_continue }}</a></div>
       </div>
       {% endif %}
+      {% if vm_filters %}</div></div>{% endif %}
       {{ content_bottom }}</div>
     {{ column_right }}</div>
 </div>

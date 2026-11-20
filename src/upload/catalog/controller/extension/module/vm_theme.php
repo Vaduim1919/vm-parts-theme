@@ -202,6 +202,16 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				$this->homeSections($data);
 				break;
 			case 'product/category':
+				if (empty($data['vm_car_page']) && !isset($data['vm_filters']) && isset($this->request->get['path'])) {
+					$fpath = '';
+					$fcat = $this->categoryId($fpath);
+
+					if ($fcat && !empty($data['products'])) {
+						$data['vm_filters'] = $this->filterPanel($fcat, $fpath, $this->filterSel());
+						$data['column_left'] = '';
+					}
+				}
+
 				if (empty($data['vm_car_page'])) {
 					$data['vm_garage'] = $this->garage();
 					$path = isset($this->request->get['path']) ? explode('_', (string)$this->request->get['path']) : array();
@@ -869,6 +879,408 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		}
 
 		$data['vm_garage'] = $garage;
+	}
+
+	// =============================================================== category filters (1.5.0)
+	// The native category page shows the filter panel; applying filters opens route vm_theme/catalog,
+	// which lists the same category with the conditions applied.
+
+	private function filterSel() {
+		$g = $this->request->get;
+		$sel = array('mf' => array(), 'st' => array(), 'pmin' => '', 'pmax' => '', 'car' => 0, 'a' => array());
+
+		if (!empty($g['mf'])) {
+			$sel['mf'] = array_values(array_filter(array_map('intval', explode(',', (string)$g['mf']))));
+		}
+
+		if (!empty($g['st'])) {
+			$sel['st'] = array_values(array_intersect(explode(',', (string)$g['st']), array('in', 'wait')));
+		}
+
+		foreach (array('pmin', 'pmax') as $k) {
+			if (isset($g[$k]) && $g[$k] !== '' && is_numeric($g[$k])) {
+				$sel[$k] = max(0, (float)$g[$k]);
+			}
+		}
+
+		$sel['car'] = !empty($g['car']) ? 1 : 0;
+
+		if (!empty($g['a']) && is_array($g['a'])) {
+			foreach ($g['a'] as $aid => $vals) {
+				$vals = array_values(array_filter(array_map(function ($v) {
+					return mb_substr(trim(html_entity_decode((string)$v, ENT_QUOTES, 'UTF-8')), 0, 128);
+				}, explode('|', (string)$vals)), 'strlen'));
+
+				if ((int)$aid > 0 && $vals) {
+					$sel['a'][(int)$aid] = array_slice($vals, 0, 20);
+				}
+			}
+		}
+
+		return $sel;
+	}
+
+	private function filterActive($sel) {
+		return $sel['mf'] || $sel['st'] || $sel['pmin'] !== '' || $sel['pmax'] !== '' || $sel['car'] || $sel['a'];
+	}
+
+	// SQL conditions on alias p; $skip = group to leave out (for facet counts)
+	private function filterWhere($cat_id, $sel, $skip = '') {
+		$p = DB_PREFIX;
+		$w = array(
+			"p.status = '1'",
+			"p.date_available <= NOW()",
+			"p.product_id IN (SELECT p2s.product_id FROM `{$p}product_to_store` p2s WHERE p2s.store_id = '" . (int)$this->config->get('config_store_id') . "')",
+			"p.product_id IN (SELECT p2c.product_id FROM `{$p}product_to_category` p2c INNER JOIN `{$p}category_path` cp ON (cp.category_id = p2c.category_id) WHERE cp.path_id = '" . (int)$cat_id . "')"
+		);
+
+		if ($skip !== 'mf' && $sel['mf']) {
+			$w[] = "p.manufacturer_id IN (" . implode(',', array_map('intval', $sel['mf'])) . ")";
+		}
+
+		if ($skip !== 'st' && count($sel['st']) == 1) {
+			$w[] = $sel['st'][0] === 'in' ? "p.quantity > 0" : "p.quantity <= 0";
+		}
+
+		if ($skip !== 'price') {
+			if ($sel['pmin'] !== '') {
+				$w[] = "p.price >= '" . (float)$sel['pmin'] . "'";
+			}
+
+			if ($sel['pmax'] !== '') {
+				$w[] = "p.price <= '" . (float)$sel['pmax'] . "'";
+			}
+		}
+
+		if ($skip !== 'car' && $sel['car'] && ($g = $this->garage())) {
+			$cond = "pv.model_id = '" . (int)$g['model_id'] . "'";
+
+			if ($g['year']) {
+				$cond .= " AND (pv.year_from = 0 OR pv.year_from <= '" . (int)$g['year'] . "') AND (pv.year_to = 0 OR pv.year_to >= '" . (int)$g['year'] . "')";
+			}
+
+			$w[] = "p.product_id IN (SELECT pv.product_id FROM `{$p}vm_product_vehicle` pv WHERE " . $cond . ")";
+		}
+
+		if ($skip !== 'a') {
+			foreach ($sel['a'] as $aid => $vals) {
+				$in = implode(',', array_map(function ($v) {
+					return "'" . $this->db->escape($v) . "'";
+				}, $vals));
+				$w[] = "p.product_id IN (SELECT pa.product_id FROM `{$p}product_attribute` pa WHERE pa.attribute_id = '" . (int)$aid . "' AND pa.language_id = '" . (int)$this->config->get('config_language_id') . "' AND pa.text IN (" . $in . "))";
+			}
+		}
+
+		return implode(' AND ', $w);
+	}
+
+	private function filterUrl($cat_path, $sel, $drop = array()) {
+		$q = array('path' => $cat_path);
+
+		if ($sel['mf']) {
+			$q['mf'] = implode(',', $sel['mf']);
+		}
+
+		if ($sel['st']) {
+			$q['st'] = implode(',', $sel['st']);
+		}
+
+		foreach (array('pmin', 'pmax') as $k) {
+			if ($sel[$k] !== '') {
+				$q[$k] = $sel[$k];
+			}
+		}
+
+		if ($sel['car']) {
+			$q['car'] = 1;
+		}
+
+		foreach ($sel['a'] as $aid => $vals) {
+			$q['a[' . $aid . ']'] = implode('|', $vals);
+		}
+
+		foreach ($drop as $k) {
+			unset($q[$k]);
+		}
+
+		$has = count($q) > 1;
+		$args = array();
+
+		foreach ($q as $k => $v) {
+			$args[] = str_replace(array('%5B', '%5D'), array('[', ']'), rawurlencode($k)) . '=' . rawurlencode($v);
+		}
+
+		return $this->url->link($has ? 'extension/module/vm_theme/catalog' : 'product/category', implode('&', $args));
+	}
+
+	// facet data for the panel
+	private function filterPanel($cat_id, $cat_path, $sel) {
+		$p = DB_PREFIX;
+		$t = $this->texts();
+		$lang = (int)$this->config->get('config_language_id');
+		$active = $this->filterActive($sel);
+		$ckey = 'vm_filter.' . (int)$cat_id . '.' . $lang . '.' . (int)$this->config->get('config_store_id');
+		$cached = $active ? null : $this->cache->get($ckey);
+
+		if (!is_array($cached)) {
+			$f = array();
+
+			$r = $this->db->query("SELECT MIN(p.price) AS mn, MAX(p.price) AS mx, COUNT(*) AS n FROM `{$p}product` p WHERE " . $this->filterWhere($cat_id, $sel, 'price'))->row;
+			$f['price'] = array('min' => floor((float)$r['mn']), 'max' => ceil((float)$r['mx']), 'n' => (int)$r['n']);
+
+			$r = $this->db->query("SELECT SUM(p.quantity > 0) AS i, SUM(p.quantity <= 0) AS w FROM `{$p}product` p WHERE " . $this->filterWhere($cat_id, $sel, 'st'))->row;
+			$f['stock'] = array('in' => (int)$r['i'], 'wait' => (int)$r['w']);
+
+			$f['mf'] = $this->db->query("SELECT m.manufacturer_id AS id, m.name, COUNT(*) AS n FROM `{$p}product` p INNER JOIN `{$p}manufacturer` m ON (m.manufacturer_id = p.manufacturer_id)
+				WHERE " . $this->filterWhere($cat_id, $sel, 'mf') . " GROUP BY m.manufacturer_id ORDER BY n DESC LIMIT 300")->rows;
+
+			// attributes with at least two values in this selection
+			$rows = $this->db->query("SELECT pa.attribute_id AS aid, ad.name AS aname, pa.text AS val, COUNT(*) AS n FROM `{$p}product_attribute` pa
+				INNER JOIN `{$p}product` p ON (p.product_id = pa.product_id)
+				INNER JOIN `{$p}attribute_description` ad ON (ad.attribute_id = pa.attribute_id AND ad.language_id = '" . $lang . "')
+				WHERE pa.language_id = '" . $lang . "' AND pa.text <> '' AND " . $this->filterWhere($cat_id, $sel, 'a') . "
+				GROUP BY pa.attribute_id, pa.text ORDER BY n DESC LIMIT 2000")->rows;
+			$attrs = array();
+
+			foreach ($rows as $row) {
+				$aid = (int)$row['aid'];
+
+				if (!isset($attrs[$aid])) {
+					$attrs[$aid] = array('id' => $aid, 'name' => $row['aname'], 'cover' => 0, 'values' => array());
+				}
+
+				$attrs[$aid]['cover'] += (int)$row['n'];
+				$attrs[$aid]['values'][] = array('v' => html_entity_decode($row['val'], ENT_QUOTES, 'UTF-8'), 'n' => (int)$row['n']);
+			}
+
+			$attrs = array_filter($attrs, function ($a) {
+				return count($a['values']) >= 2 && count($a['values']) <= 150;
+			});
+			uasort($attrs, function ($a, $b) {
+				return $b['cover'] - $a['cover'];
+			});
+			$f['attrs'] = array_slice(array_values($attrs), 0, 12);
+
+			if ($this->garage()) {
+				$f['car'] = (int)$this->db->query("SELECT COUNT(*) AS n FROM `{$p}product` p WHERE " . $this->filterWhere($cat_id, array_merge($sel, array('car' => 1)), ''))->row['n'];
+			}
+
+			$cached = $f;
+
+			if (!$active) {
+				$this->cache->set($ckey, $f);
+			}
+		}
+
+		$f = $cached;
+		$panel = array('action' => html_entity_decode($this->url->link('extension/module/vm_theme/catalog'), ENT_QUOTES, 'UTF-8'), 'path' => $cat_path, 'groups' => array(), 'chips' => array(), 'active' => $active, 'count' => 0);
+		$panel['reset'] = $this->url->link('product/category', 'path=' . $cat_path);
+		$panel['price'] = $f['price'] + array('from' => $sel['pmin'] !== '' ? $sel['pmin'] : '', 'to' => $sel['pmax'] !== '' ? $sel['pmax'] : '');
+
+		if ($sel['pmin'] !== '' || $sel['pmax'] !== '') {
+			$panel['chips'][] = array('text' => $t['text_f_price'] . ': ' . ($sel['pmin'] !== '' ? $sel['pmin'] : $f['price']['min']) . '–' . ($sel['pmax'] !== '' ? $sel['pmax'] : $f['price']['max']), 'href' => $this->filterUrl($cat_path, array_merge($sel, array('pmin' => '', 'pmax' => ''))));
+		}
+
+		$garage = $this->garage();
+
+		if ($garage && !empty($f['car'])) {
+			$panel['car'] = array('label' => $garage['label'], 'n' => $f['car'], 'on' => $sel['car']);
+
+			if ($sel['car']) {
+				$panel['chips'][] = array('text' => $garage['label'], 'href' => $this->filterUrl($cat_path, array_merge($sel, array('car' => 0))));
+			}
+		}
+
+		$opts = array();
+
+		foreach (array('in' => $t['text_f_in'], 'wait' => $t['text_f_wait']) as $k => $label) {
+			if ($f['stock'][$k] > 0 || in_array($k, $sel['st'], true)) {
+				$on = in_array($k, $sel['st'], true);
+				$opts[] = array('name' => 'st', 'value' => $k, 'label' => $label, 'n' => $f['stock'][$k], 'on' => $on);
+
+				if ($on) {
+					$panel['chips'][] = array('text' => $label, 'href' => $this->filterUrl($cat_path, array_merge($sel, array('st' => array_values(array_diff($sel['st'], array($k)))))));
+				}
+			}
+		}
+
+		if (count($opts) > 1 || $sel['st']) {
+			$panel['groups'][] = array('key' => 'st', 'title' => $t['text_f_stock'], 'opts' => $opts, 'search' => false);
+		}
+
+		$opts = array();
+
+		foreach ($f['mf'] as $m) {
+			$on = in_array((int)$m['id'], $sel['mf'], true);
+			$opts[] = array('name' => 'mf', 'value' => (int)$m['id'], 'label' => html_entity_decode($m['name'], ENT_QUOTES, 'UTF-8'), 'n' => (int)$m['n'], 'on' => $on);
+
+			if ($on) {
+				$panel['chips'][] = array('text' => html_entity_decode($m['name'], ENT_QUOTES, 'UTF-8'), 'href' => $this->filterUrl($cat_path, array_merge($sel, array('mf' => array_values(array_diff($sel['mf'], array((int)$m['id'])))))));
+			}
+		}
+
+		if (count($opts) > 1 || $sel['mf']) {
+			usort($opts, function ($a, $b) {
+				return ($b['on'] - $a['on']) ? $b['on'] - $a['on'] : $b['n'] - $a['n'];
+			});
+			$panel['groups'][] = array('key' => 'mf', 'title' => $t['text_f_brand'], 'opts' => $opts, 'search' => count($opts) > 10);
+		}
+
+		foreach ($f['attrs'] as $a) {
+			$opts = array();
+			$chosen = isset($sel['a'][$a['id']]) ? $sel['a'][$a['id']] : array();
+
+			foreach ($a['values'] as $v) {
+				$on = in_array($v['v'], $chosen, true);
+				$opts[] = array('name' => 'a[' . $a['id'] . ']', 'value' => $v['v'], 'label' => $v['v'], 'n' => $v['n'], 'on' => $on);
+
+				if ($on) {
+					$rest = $sel['a'];
+					$rest[$a['id']] = array_values(array_diff($chosen, array($v['v'])));
+
+					if (!$rest[$a['id']]) {
+						unset($rest[$a['id']]);
+					}
+
+					$panel['chips'][] = array('text' => $a['name'] . ': ' . $v['v'], 'href' => $this->filterUrl($cat_path, array_merge($sel, array('a' => $rest))));
+				}
+			}
+
+			usort($opts, function ($x, $y) {
+				return ($y['on'] - $x['on']) ? $y['on'] - $x['on'] : $y['n'] - $x['n'];
+			});
+			$panel['groups'][] = array('key' => 'a' . $a['id'], 'attr' => $a['id'], 'title' => $a['name'], 'opts' => $opts, 'search' => count($opts) > 10);
+		}
+
+		$panel['count'] = count($panel['chips']);
+
+		return $panel;
+	}
+
+	private function categoryId(&$path) {
+		$parts = isset($this->request->get['path']) ? array_filter(array_map('intval', explode('_', (string)$this->request->get['path']))) : array();
+		$path = implode('_', $parts);
+
+		return $parts ? (int)end($parts) : 0;
+	}
+
+	// filtered listing of a category
+	public function catalog() {
+		$path = '';
+		$cat_id = $this->categoryId($path);
+		$this->load->model('catalog/category');
+		$category = $cat_id ? $this->model_catalog_category->getCategory($cat_id) : array();
+
+		if (!$category) {
+			$this->response->redirect($this->url->link('common/home'));
+
+			return;
+		}
+
+		$sel = $this->filterSel();
+
+		if (!$this->filterActive($sel)) {
+			$this->response->redirect($this->url->link('product/category', 'path=' . $path));
+
+			return;
+		}
+
+		$this->load->language('product/category');
+		$this->load->model('catalog/product');
+		$this->load->model('tool/image');
+
+		$t = $this->texts();
+		$theme = $this->config->get('config_theme');
+		$p = DB_PREFIX;
+		$where = $this->filterWhere($cat_id, $sel);
+
+		$sort = isset($this->request->get['sort']) ? (string)$this->request->get['sort'] : 'p.sort_order';
+		$order = (isset($this->request->get['order']) && strtoupper($this->request->get['order']) === 'DESC') ? 'DESC' : 'ASC';
+		$page = isset($this->request->get['page']) ? max(1, (int)$this->request->get['page']) : 1;
+		$limit = isset($this->request->get['limit']) ? min(100, max(1, (int)$this->request->get['limit'])) : 0;
+
+		if (!$limit) {
+			$limit = (int)$this->config->get('theme_' . $theme . '_product_limit');
+			$limit = $limit > 0 ? $limit : 24;
+		}
+
+		$sorts = array('p.sort_order' => 'p.sort_order', 'pd.name' => 'LCASE(pd.name)', 'p.price' => 'p.price', 'p.date_added' => 'p.date_added');
+		$sort_sql = isset($sorts[$sort]) ? $sorts[$sort] : 'p.sort_order';
+
+		$total = (int)$this->db->query("SELECT COUNT(*) AS total FROM `{$p}product` p WHERE " . $where)->row['total'];
+		$ids = array();
+
+		foreach ($this->db->query("SELECT p.product_id FROM `{$p}product` p LEFT JOIN `{$p}product_description` pd ON (pd.product_id = p.product_id AND pd.language_id = '" . (int)$this->config->get('config_language_id') . "') WHERE " . $where . " ORDER BY (p.quantity > 0) DESC, " . $sort_sql . " " . $order . ", LCASE(pd.name) ASC LIMIT " . (($page - 1) * $limit) . "," . $limit)->rows as $r) {
+			$ids[] = (int)$r['product_id'];
+		}
+
+		$data['products'] = $this->cards($ids);
+
+		$data['breadcrumbs'] = array(array('text' => $this->language->get('text_home'), 'href' => $this->url->link('common/home')));
+		$acc = array();
+
+		foreach (explode('_', $path) as $pid) {
+			$acc[] = $pid;
+			$c = $this->model_catalog_category->getCategory((int)$pid);
+
+			if ($c) {
+				$data['breadcrumbs'][] = array('text' => $c['name'], 'href' => $this->url->link('product/category', 'path=' . implode('_', $acc)));
+			}
+		}
+
+		$this->document->setTitle($category['name'] . ' — ' . $this->config->get('config_name'));
+		$this->document->addLink($this->url->link('product/category', 'path=' . $path), 'canonical');
+
+		$data['heading_title'] = $category['name'];
+		$data['thumb'] = '';
+		$data['description'] = '';
+		$data['categories'] = array();
+		$data['text_compare'] = sprintf($this->language->get('text_compare'), isset($this->session->data['compare']) ? count($this->session->data['compare']) : 0);
+		$data['compare'] = $this->url->link('product/compare');
+
+		$base = $this->filterUrl($path, $sel);
+		$base_q = html_entity_decode(parse_url($base, PHP_URL_QUERY), ENT_QUOTES, 'UTF-8');
+		$base_q = preg_replace('/(^|&)route=[^&]*/', '', $base_q);
+		$link = function ($extra) use ($base_q) {
+			return $this->url->link('extension/module/vm_theme/catalog', ltrim($base_q, '&') . $extra);
+		};
+
+		$data['sorts'] = array();
+
+		foreach (array(array('p.sort_order', 'ASC', 'text_default'), array('pd.name', 'ASC', 'text_name_asc'), array('pd.name', 'DESC', 'text_name_desc'), array('p.price', 'ASC', 'text_price_asc'), array('p.price', 'DESC', 'text_price_desc')) as $s) {
+			$data['sorts'][] = array('text' => $this->language->get($s[2]), 'value' => $s[0] . '-' . $s[1], 'href' => $link('&sort=' . $s[0] . '&order=' . $s[1]));
+		}
+
+		$data['limits'] = array();
+
+		foreach (array_unique(array($limit, 25, 50, 75, 100)) as $v) {
+			$data['limits'][] = array('text' => $v, 'value' => $v, 'href' => $link('&sort=' . $sort . '&order=' . $order . '&limit=' . $v));
+		}
+
+		$pagination = new Pagination();
+		$pagination->total = $total;
+		$pagination->page = $page;
+		$pagination->limit = $limit;
+		$pagination->url = $link('&sort=' . $sort . '&order=' . $order . '&limit=' . $limit . '&page={page}');
+
+		$data['pagination'] = $pagination->render();
+		$data['results'] = sprintf($this->language->get('text_pagination'), $total ? (($page - 1) * $limit) + 1 : 0, ((($page - 1) * $limit) > ($total - $limit)) ? $total : ((($page - 1) * $limit) + $limit), $total, ceil($total / $limit));
+		$data['sort'] = $sort;
+		$data['order'] = $order;
+		$data['limit'] = $limit;
+		$data['text_empty'] = $t['text_f_empty'];
+		$data['continue'] = $this->url->link('product/category', 'path=' . $path);
+		$data['vm_filters'] = $this->filterPanel($cat_id, $path, $sel);
+		$data['vm_filter_total'] = $total;
+
+		$data['column_left'] = '';
+		$data['column_right'] = '';
+		$data['content_top'] = '';
+		$data['content_bottom'] = '';
+		$data['footer'] = $this->load->controller('common/footer');
+		$data['header'] = $this->load->controller('common/header');
+
+		$this->response->setOutput($this->load->view('product/category', $data));
 	}
 
 	// =============================================================== account dashboard (1.4.1)
