@@ -149,6 +149,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				$data['vm_home'] = $this->url->link('common/home');
 				$data['vm_cart_link'] = $this->url->link('checkout/cart');
 				$data['vm_cart_count'] = $this->cartCount();
+				$this->carBar($data);
 				$t = $this->texts();
 				$data['vm_js'] = json_encode(array(
 					'added'    => $t['text_pop_added'],
@@ -169,6 +170,19 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				break;
 			case 'common/home':
 				$data['vm_menu'] = $this->menu();
+				$data['vm_garage'] = $this->garage();
+				$data['vm_carbar_html'] = ($this->vmTablesExist() && $this->carMakesData()) ? $this->carBarHtml(false) : '';
+				break;
+			case 'product/category':
+				if (empty($data['vm_car_page'])) {
+					$data['vm_garage'] = $this->garage();
+					$path = isset($this->request->get['path']) ? explode('_', (string)$this->request->get['path']) : array();
+					$cid = (int)end($path);
+
+					if ($data['vm_garage'] && $cid) {
+						$data['vm_garage_cat'] = $data['vm_garage']['href'] . '&cat=' . $cid;
+					}
+				}
 				break;
 			case 'common/footer':
 				$data['vm_menu'] = $this->menu();
@@ -481,7 +495,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 			foreach ($query->rows as $row) {
 				$years = $row['year_from'] ? ' ' . $row['year_from'] . '–' . ($row['year_to'] ? $row['year_to'] : $this->texts()['text_now']) : '';
-				$fits[(int)$row['product_id']] = $row['make'] . ' ' . $row['model'] . $years;
+				$fits[(int)$row['product_id']] = self::prettyName($row['make']) . ' ' . self::prettyName($row['model']) . $years;
 			}
 		}
 
@@ -807,13 +821,547 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 			foreach ($query->rows as $row) {
 				$data['vm_fits'][] = array(
-					'make'  => $row['make'],
-					'model' => $row['model'],
+					'make'  => self::prettyName($row['make']),
+					'model' => self::prettyName($row['model']),
 					'years' => $row['year_from'] ? $row['year_from'] . '–' . ($row['year_to'] ? $row['year_to'] : $this->texts()['text_now']) : $this->texts()['text_all_years']
 				);
 			}
 		}
 
 		$this->productExtras($data);
+
+		// the visitor's car is known, the product has a fitment list, and the car is not in it
+		$data['vm_nofit'] = '';
+		$garage = $this->garage();
+
+		if ($garage && empty($data['vm_product']['vm_fit']) && ($data['vm_fits'] || !empty($data['vm_compat']))) {
+			$data['vm_nofit'] = $garage['label'];
+		}
+
+		$data['vm_garage'] = $garage;
+	}
+
+	// =============================================================== car picker (1.3.0)
+	// Makes / models / years come from vm_make, vm_model, vm_product_vehicle (filled by V&M Catalog from BM Parts).
+
+	private static $popular = array('volkswagen', 'vw', 'skoda', 'renault', 'toyota', 'ford', 'opel', 'hyundai', 'kia', 'bmw', 'mercedes-benz', 'audi', 'nissan', 'chevrolet', 'daewoo', 'mitsubishi', 'mazda', 'peugeot', 'citroen', 'honda', 'fiat', 'lexus', 'dacia', 'subaru');
+
+	public static function prettyName($name) {
+		$name = trim((string)$name);
+
+		if ($name === '') {
+			return $name;
+		}
+
+		return preg_replace_callback('/[A-ZА-ЯІЇЄ]{4,}/u', function ($m) {
+			if (preg_match('/^(?=[MDCLXVI])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$/', $m[0])) {
+				return $m[0];
+			}
+
+			return mb_convert_case($m[0], MB_CASE_TITLE, 'UTF-8');
+		}, $name);
+	}
+
+	// "GOLF IV Variant (1J5)" -> "GOLF", "LAND CRUISER 200 (_J20_)" -> "LAND CRUISER", "A4 B8 (8K2)" -> "A4"
+	public static function modelFamily($name) {
+		$base = trim(preg_replace('/\(.*$/u', '', (string)$name));
+		$tokens = preg_split('/\s+/u', $base);
+		$out = array();
+		$body = '/^(variant|avant|turnier|kombi|combi|estate|wagon|touring|sportback|sportwagen|sw|break|bus|van|kasten|box|platform|pickup|pick-up|hatchback|sedan|saloon|liftback|coupe|coupé|cabrio|cabriolet|convertible|roadster|limousine|tourer|grandtour|universal|shooting|allroad|cross|plus|classic)$/iu';
+
+		foreach ($tokens as $i => $tk) {
+			if ($tk === '') {
+				continue;
+			}
+
+			if ($i > 0 && (preg_match('/^(?=[MDCLXVI])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$/i', $tk) || preg_match('/^[A-Z]{0,2}\d/u', $tk) || preg_match($body, $tk))) {
+				break;
+			}
+
+			$out[] = $tk;
+
+			if (count($out) >= 3) {
+				break;
+			}
+		}
+
+		return $out ? implode(' ', $out) : $base;
+	}
+
+	private function carCacheKey($what) {
+		return 'vm_car.' . $what . '.' . (int)$this->config->get('config_store_id');
+	}
+
+	private function carActiveJoin() {
+		return " INNER JOIN `" . DB_PREFIX . "product` p ON (p.product_id = pv.product_id AND p.status = '1')
+			INNER JOIN `" . DB_PREFIX . "product_to_store` p2s ON (p2s.product_id = p.product_id AND p2s.store_id = '" . (int)$this->config->get('config_store_id') . "')";
+	}
+
+	private function carMakesData() {
+		if (!$this->vmTablesExist()) {
+			return array();
+		}
+
+		$data = $this->cache->get($this->carCacheKey('makes'));
+
+		if (is_array($data)) {
+			return $data;
+		}
+
+		$rows = $this->db->query("SELECT mk.make_id, mk.name, COUNT(DISTINCT pv.product_id) AS total FROM `" . DB_PREFIX . "vm_product_vehicle` pv
+			" . $this->carActiveJoin() . "
+			INNER JOIN `" . DB_PREFIX . "vm_model` md ON (md.model_id = pv.model_id)
+			INNER JOIN `" . DB_PREFIX . "vm_make` mk ON (mk.make_id = md.make_id AND mk.status = '1')
+			GROUP BY mk.make_id")->rows;
+
+		$data = array();
+
+		foreach ($rows as $r) {
+			$key = mb_strtolower($r['name'], 'UTF-8');
+			$pop = array_search($key, self::$popular);
+			$data[] = array('id' => (int)$r['make_id'], 'name' => self::prettyName($r['name']), 'count' => (int)$r['total'], 'pop' => $pop === false ? 0 : 100 - $pop);
+		}
+
+		usort($data, function ($a, $b) {
+			return strnatcasecmp($a['name'], $b['name']);
+		});
+
+		$this->cache->set($this->carCacheKey('makes'), $data);
+
+		return $data;
+	}
+
+	private function carModelsData($make_id) {
+		$make_id = (int)$make_id;
+
+		if (!$make_id || !$this->vmTablesExist()) {
+			return array();
+		}
+
+		$data = $this->cache->get($this->carCacheKey('models.' . $make_id));
+
+		if (is_array($data)) {
+			return $data;
+		}
+
+		$rows = $this->db->query("SELECT md.model_id, md.name, MIN(NULLIF(pv.year_from, 0)) AS yf, MAX(pv.year_to) AS yt, SUM(pv.year_from > 0 AND pv.year_to = 0) AS open_end, COUNT(DISTINCT pv.product_id) AS total
+			FROM `" . DB_PREFIX . "vm_product_vehicle` pv " . $this->carActiveJoin() . "
+			INNER JOIN `" . DB_PREFIX . "vm_model` md ON (md.model_id = pv.model_id)
+			WHERE md.make_id = '" . $make_id . "' GROUP BY md.model_id")->rows;
+
+		$now = $this->texts()['text_now'];
+		$data = array();
+
+		foreach ($rows as $r) {
+			$years = '';
+
+			if ($r['yf']) {
+				$years = $r['yf'] . '–' . (($r['open_end'] || !$r['yt']) ? $now : $r['yt']);
+			}
+
+			$name = self::prettyName($r['name']);
+			$data[] = array('id' => (int)$r['model_id'], 'name' => $name, 'family' => self::prettyName(self::modelFamily($r['name'])), 'years' => $years, 'yf' => (int)$r['yf'], 'count' => (int)$r['total']);
+		}
+
+		usort($data, function ($a, $b) {
+			$c = strnatcasecmp($a['family'], $b['family']);
+
+			return $c ? $c : ($a['yf'] - $b['yf'] ? $a['yf'] - $b['yf'] : strnatcasecmp($a['name'], $b['name']));
+		});
+
+		$this->cache->set($this->carCacheKey('models.' . $make_id), $data);
+
+		return $data;
+	}
+
+	private function carYearsData($model_id) {
+		$model_id = (int)$model_id;
+
+		if (!$model_id || !$this->vmTablesExist()) {
+			return array();
+		}
+
+		$query = $this->db->query("SELECT DISTINCT pv.year_from, pv.year_to FROM `" . DB_PREFIX . "vm_product_vehicle` pv " . $this->carActiveJoin() . " WHERE pv.model_id = '" . $model_id . "' AND pv.year_from > 0");
+
+		$current = (int)date('Y');
+		$years = array();
+
+		foreach ($query->rows as $row) {
+			$from = max(1950, (int)$row['year_from']);
+			$to = (int)$row['year_to'] ? min((int)$row['year_to'], $current + 1) : $current;
+
+			for ($y = $from; $y <= $to && $y - $from < 80; $y++) {
+				$years[$y] = $y;
+			}
+		}
+
+		krsort($years);
+
+		return array_values($years);
+	}
+
+	private function jsonOut($data) {
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->addHeader('Cache-Control: public, max-age=600');
+		$this->response->setOutput(json_encode($data, JSON_UNESCAPED_UNICODE));
+	}
+
+	public function carMakes() {
+		$this->jsonOut($this->carMakesData());
+	}
+
+	public function carModels() {
+		$this->jsonOut($this->carModelsData(isset($this->request->get['make_id']) ? $this->request->get['make_id'] : 0));
+	}
+
+	public function carYears() {
+		$this->jsonOut($this->carYearsData(isset($this->request->get['model_id']) ? $this->request->get['model_id'] : 0));
+	}
+
+	// cookie "make-model-year"; make only is allowed for the results page, the garage needs a model
+	private function carCookie() {
+		$c = array('make_id' => 0, 'model_id' => 0, 'year' => 0);
+
+		if (!empty($this->request->cookie['vm_car'])) {
+			$parts = array_map('intval', explode('-', (string)$this->request->cookie['vm_car']));
+			$c['make_id'] = isset($parts[0]) ? $parts[0] : 0;
+			$c['model_id'] = isset($parts[1]) ? $parts[1] : 0;
+			$c['year'] = isset($parts[2]) ? $parts[2] : 0;
+		}
+
+		return $c;
+	}
+
+	// selection + human names, or false
+	private function carInfo($make_id, $model_id = 0, $year = 0) {
+		if (!$make_id || !$this->vmTablesExist()) {
+			return false;
+		}
+
+		$make = $this->db->query("SELECT make_id, name FROM `" . DB_PREFIX . "vm_make` WHERE make_id = '" . (int)$make_id . "'")->row;
+
+		if (!$make) {
+			return false;
+		}
+
+		$info = array('make_id' => (int)$make_id, 'model_id' => 0, 'year' => 0, 'make' => self::prettyName($make['name']), 'model' => '', 'label' => self::prettyName($make['name']));
+
+		if ($model_id) {
+			$model = $this->db->query("SELECT model_id, name FROM `" . DB_PREFIX . "vm_model` WHERE model_id = '" . (int)$model_id . "' AND make_id = '" . (int)$make_id . "'")->row;
+
+			if ($model) {
+				$info['model_id'] = (int)$model_id;
+				$info['model'] = self::prettyName($model['name']);
+				$info['label'] .= ' ' . $info['model'];
+
+				if ($year >= 1950 && $year <= (int)date('Y') + 1) {
+					$info['year'] = (int)$year;
+					$info['label'] .= ', ' . (int)$year;
+				}
+			}
+		}
+
+		$info['href'] = $this->url->link('extension/module/vm_theme/car', 'make_id=' . $info['make_id'] . ($info['model_id'] ? '&model_id=' . $info['model_id'] : '') . ($info['year'] ? '&year=' . $info['year'] : ''));
+
+		return $info;
+	}
+
+	private function garage() {
+		static $g = null;
+
+		if ($g === null) {
+			$c = $this->carCookie();
+			$g = ($c['make_id'] && $c['model_id']) ? $this->carInfo($c['make_id'], $c['model_id'], $c['year']) : false;
+
+			if ($g && !$g['model_id']) {
+				$g = false;
+			}
+		}
+
+		return $g;
+	}
+
+	// data for the picker bar + the JS config
+	private function carBar(&$data, $sel = null) {
+		if (!$this->vmTablesExist()) {
+			return;
+		}
+
+		$t = $this->texts();
+		$garage = $this->garage();
+
+		if ($sel === null) {
+			$sel = $garage ? $garage : array('make_id' => 0, 'model_id' => 0, 'year' => 0, 'make' => '', 'model' => '');
+		}
+
+		$data['vm_garage'] = $garage;
+		$data['vm_carbar'] = array(
+			'cfg' => json_encode(array(
+				'sel'      => array('make_id' => (int)$sel['make_id'], 'model_id' => (int)$sel['model_id'], 'year' => (int)$sel['year'], 'make' => isset($sel['make']) ? $sel['make'] : '', 'model' => isset($sel['model']) ? $sel['model'] : ''),
+				'garage'   => $garage ? $garage['label'] : '',
+				'urls'     => array(
+					'makes'   => html_entity_decode($this->url->link('extension/module/vm_theme/carMakes'), ENT_QUOTES, 'UTF-8'),
+					'models'  => html_entity_decode($this->url->link('extension/module/vm_theme/carModels'), ENT_QUOTES, 'UTF-8'),
+					'years'   => html_entity_decode($this->url->link('extension/module/vm_theme/carYears'), ENT_QUOTES, 'UTF-8'),
+					'results' => html_entity_decode($this->url->link('extension/module/vm_theme/car'), ENT_QUOTES, 'UTF-8'),
+					'clear'   => html_entity_decode($this->url->link('extension/module/vm_theme/carClear'), ENT_QUOTES, 'UTF-8')
+				),
+				't' => array(
+					'make' => $t['text_car_make'], 'model' => $t['text_car_model'], 'year' => $t['text_car_year'],
+					'all_years' => $t['text_car_all_years'], 'all_models' => $t['text_car_all_models'], 'popular' => $t['text_car_popular'], 'all_makes' => $t['text_car_all_makes'],
+					'search_make' => $t['text_car_search_make'], 'search_model' => $t['text_car_search_model'], 'nothing' => $t['text_car_nothing'],
+					'loading' => $t['text_car_loading'], 'show' => $t['text_car_show'], 'show_n' => $t['text_car_show_n'], 'parts' => $t['text_car_parts'], 'pick_make' => $t['text_car_pick_make'], 'back' => $t['text_car_back'], 'title' => $t['text_car_title'], 'forget' => $t['text_car_forget']
+				)
+			), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)
+		);
+	}
+
+	private function carBarHtml($compact, $label = '') {
+		return $this->load->view('extension/module/vm_carbar', array(
+			'carbar_label'   => $label,
+			'vm_t'           => $this->texts(),
+			'vm_garage'      => $this->garage(),
+			'carbar_garage'  => !$compact,
+			'carbar_compact' => $compact
+		));
+	}
+
+	public function carClear() {
+		setcookie('vm_car', '', time() - 3600, '/');
+
+		$back = isset($this->request->server['HTTP_REFERER']) ? html_entity_decode($this->request->server['HTTP_REFERER'], ENT_QUOTES, 'UTF-8') : '';
+		$host = parse_url((string)$this->config->get('config_url'), PHP_URL_HOST);
+
+		if (!$back || parse_url($back, PHP_URL_HOST) !== $host || strpos($back, 'vm_theme/car') !== false) {
+			$back = $this->url->link('common/home');
+		}
+
+		$this->response->redirect($back);
+	}
+
+	// results page: all parts for the chosen car, with category chips
+	public function car() {
+		$make_id = isset($this->request->get['make_id']) ? (int)$this->request->get['make_id'] : 0;
+		$model_id = isset($this->request->get['model_id']) ? (int)$this->request->get['model_id'] : 0;
+		$year = isset($this->request->get['year']) ? (int)$this->request->get['year'] : 0;
+		$cat = isset($this->request->get['cat']) ? (int)$this->request->get['cat'] : 0;
+
+		$info = $this->carInfo($make_id, $model_id, $year);
+
+		if (!$info) {
+			$this->response->redirect($this->url->link('common/home'));
+
+			return;
+		}
+
+		$make_id = $info['make_id'];
+		$model_id = $info['model_id'];
+		$year = $info['year'];
+
+		setcookie('vm_car', $make_id . '-' . $model_id . '-' . $year, time() + 86400 * 180, '/');
+		$this->request->cookie['vm_car'] = $make_id . '-' . $model_id . '-' . $year;
+
+		$this->load->language('product/category');
+		$this->load->model('catalog/product');
+		$this->load->model('tool/image');
+
+		$t = $this->texts();
+		$lang = (int)$this->config->get('config_language_id');
+		$theme = $this->config->get('config_theme');
+		$p = DB_PREFIX;
+
+		$where = $model_id ? "pv.model_id = '" . $model_id . "'" : "pv.model_id IN (SELECT model_id FROM `{$p}vm_model` WHERE make_id = '" . $make_id . "')";
+
+		if ($year) {
+			$where .= " AND (pv.year_from = 0 OR pv.year_from <= '" . $year . "') AND (pv.year_to = 0 OR pv.year_to >= '" . $year . "')";
+		}
+
+		$from = " FROM `{$p}vm_product_vehicle` pv " . $this->carActiveJoin() . " LEFT JOIN `{$p}product_description` pd ON (pd.product_id = p.product_id AND pd.language_id = '" . $lang . "')";
+
+		// category chips: top-level sections first, then subcategories of the chosen section
+		$chips = array();
+		$base = 'make_id=' . $make_id . ($model_id ? '&model_id=' . $model_id : '') . ($year ? '&year=' . $year : '');
+		$cat_rows = $this->db->query("SELECT cp.path_id AS category_id, cp.level, COUNT(DISTINCT p.product_id) AS total" . $from . "
+			INNER JOIN `{$p}product_to_category` p2c ON (p2c.product_id = p.product_id)
+			INNER JOIN `{$p}category_path` cp ON (cp.category_id = p2c.category_id)
+			WHERE " . $where . " GROUP BY cp.path_id, cp.level")->rows;
+
+		$parent_of = array();
+		$counts = array();
+
+		foreach ($cat_rows as $r) {
+			$counts[(int)$r['category_id']] = (int)$r['total'];
+		}
+
+		if ($counts) {
+			$names = array();
+			$q = $this->db->query("SELECT c.category_id, c.parent_id, cd.name FROM `{$p}category` c LEFT JOIN `{$p}category_description` cd ON (cd.category_id = c.category_id AND cd.language_id = '" . $lang . "') WHERE c.status = '1' AND c.category_id IN (" . implode(',', array_keys($counts)) . ")");
+
+			foreach ($q->rows as $r) {
+				$names[(int)$r['category_id']] = $r['name'];
+				$parent_of[(int)$r['category_id']] = (int)$r['parent_id'];
+			}
+
+			$section = 0;
+
+			if ($cat && isset($parent_of[$cat])) {
+				$section = $parent_of[$cat] ? $parent_of[$cat] : $cat;
+			}
+
+			foreach ($names as $id => $name) {
+				$is_top = empty($parent_of[$id]);
+
+				if ($is_top || ($section && $parent_of[$id] == $section)) {
+					$chips[] = array(
+						'id'     => $id,
+						'name'   => $name,
+						'count'  => $counts[$id],
+						'top'    => $is_top,
+						'active' => ($id == $cat || ($is_top && $id == $section)),
+						'href'   => $this->url->link('extension/module/vm_theme/car', $base . '&cat=' . $id)
+					);
+				}
+			}
+
+			usort($chips, function ($a, $b) {
+				return ($b['top'] - $a['top']) ? $b['top'] - $a['top'] : $b['count'] - $a['count'];
+			});
+		}
+
+		if ($cat && isset($counts[$cat])) {
+			$where .= " AND p.product_id IN (SELECT p2c2.product_id FROM `{$p}product_to_category` p2c2 INNER JOIN `{$p}category_path` cp2 ON (cp2.category_id = p2c2.category_id) WHERE cp2.path_id = '" . $cat . "')";
+		} else {
+			$cat = 0;
+		}
+
+		$sort = isset($this->request->get['sort']) ? (string)$this->request->get['sort'] : 'p.sort_order';
+		$order = (isset($this->request->get['order']) && strtoupper($this->request->get['order']) === 'DESC') ? 'DESC' : 'ASC';
+		$page = isset($this->request->get['page']) ? max(1, (int)$this->request->get['page']) : 1;
+		$limit = isset($this->request->get['limit']) ? min(100, max(1, (int)$this->request->get['limit'])) : 0;
+
+		if (!$limit) {
+			$limit = (int)$this->config->get('theme_' . $theme . '_product_limit');
+			$limit = $limit > 0 ? $limit : 24;
+		}
+
+		$sorts = array('p.sort_order' => 'p.sort_order', 'pd.name' => 'LCASE(pd.name)', 'p.price' => 'p.price', 'p.date_added' => 'p.date_added');
+		$sort_sql = isset($sorts[$sort]) ? $sorts[$sort] : 'p.sort_order';
+
+		$total = (int)$this->db->query("SELECT COUNT(DISTINCT p.product_id) AS total" . $from . " WHERE " . $where)->row['total'];
+		$ids = array();
+
+		foreach ($this->db->query("SELECT DISTINCT p.product_id, p.quantity, p.sort_order, p.price, p.date_added, pd.name" . $from . " WHERE " . $where . " ORDER BY (p.quantity > 0) DESC, " . $sort_sql . " " . $order . ", LCASE(pd.name) ASC LIMIT " . (($page - 1) * $limit) . "," . $limit)->rows as $r) {
+			$ids[] = (int)$r['product_id'];
+		}
+
+		$img_w = $this->config->get('theme_' . $theme . '_image_product_width');
+		$img_h = $this->config->get('theme_' . $theme . '_image_product_height');
+		$data['products'] = array();
+
+		foreach ($ids as $product_id) {
+			$r = $this->model_catalog_product->getProduct($product_id);
+
+			if (!$r) {
+				continue;
+			}
+
+			$price = ($this->customer->isLogged() || !$this->config->get('config_customer_price')) ? $this->currency->format($this->tax->calculate($r['price'], $r['tax_class_id'], $this->config->get('config_tax')), $this->session->data['currency']) : false;
+			$special = (!is_null($r['special']) && (float)$r['special'] >= 0) ? $this->currency->format($this->tax->calculate($r['special'], $r['tax_class_id'], $this->config->get('config_tax')), $this->session->data['currency']) : false;
+
+			$data['products'][] = array(
+				'product_id'  => $r['product_id'],
+				'thumb'       => $this->model_tool_image->resize($r['image'] ? $r['image'] : 'placeholder.png', $img_w, $img_h),
+				'name'        => $r['name'],
+				'description' => '',
+				'price'       => $price,
+				'special'     => $special,
+				'tax'         => false,
+				'minimum'     => $r['minimum'] > 0 ? $r['minimum'] : 1,
+				'rating'      => $this->config->get('config_review_status') ? (int)$r['rating'] : false,
+				'href'        => $this->url->link('product/product', 'product_id=' . $r['product_id'])
+			);
+		}
+
+		$heading = sprintf($t['text_car_heading'], $info['label']);
+		$cat_name = '';
+
+		foreach ($chips as $c) {
+			if ($c['id'] == $cat) {
+				$cat_name = $c['name'];
+			}
+		}
+
+		$this->document->setTitle(($cat_name ? $cat_name . ' — ' : '') . $heading . ' | ' . $this->config->get('config_name'));
+		$this->document->setDescription(sprintf($t['text_car_meta'], $info['label']));
+
+		$data['breadcrumbs'] = array(
+			array('text' => $this->language->get('text_home'), 'href' => $this->url->link('common/home')),
+			array('text' => $info['make'], 'href' => $this->url->link('extension/module/vm_theme/car', 'make_id=' . $make_id))
+		);
+
+		if ($model_id) {
+			$data['breadcrumbs'][] = array('text' => $info['model'] . ($year ? ', ' . $year : ''), 'href' => $info['href']);
+		}
+
+		if ($cat_name) {
+			$data['breadcrumbs'][] = array('text' => $cat_name, 'href' => $this->url->link('extension/module/vm_theme/car', $base . '&cat=' . $cat));
+		}
+
+		$data['heading_title'] = $cat_name ? $cat_name . ' — ' . $info['label'] : $heading;
+		$data['thumb'] = '';
+		$data['description'] = '';
+		$data['categories'] = array();
+		$data['vm_car_page'] = array(
+			'label' => $info['label'],
+			'total' => $total,
+			'chips' => $chips,
+			'all'   => $this->url->link('extension/module/vm_theme/car', $base),
+			'cat'   => $cat,
+			'model' => $model_id,
+			'bar'   => $this->carBarHtml(true, $info['label'])
+		);
+
+		$data['text_compare'] = sprintf($this->language->get('text_compare'), isset($this->session->data['compare']) ? count($this->session->data['compare']) : 0);
+		$data['compare'] = $this->url->link('product/compare');
+
+		$url = $base . ($cat ? '&cat=' . $cat : '');
+		$data['sorts'] = array();
+
+		foreach (array(array('p.sort_order', 'ASC', 'text_default'), array('pd.name', 'ASC', 'text_name_asc'), array('pd.name', 'DESC', 'text_name_desc'), array('p.price', 'ASC', 'text_price_asc'), array('p.price', 'DESC', 'text_price_desc')) as $s) {
+			$data['sorts'][] = array('text' => $this->language->get($s[2]), 'value' => $s[0] . '-' . $s[1], 'href' => $this->url->link('extension/module/vm_theme/car', $url . '&sort=' . $s[0] . '&order=' . $s[1]));
+		}
+
+		$data['limits'] = array();
+
+		foreach (array_unique(array($limit, 25, 50, 75, 100)) as $v) {
+			$data['limits'][] = array('text' => $v, 'value' => $v, 'href' => $this->url->link('extension/module/vm_theme/car', $url . '&sort=' . $sort . '&order=' . $order . '&limit=' . $v));
+		}
+
+		$pagination = new Pagination();
+		$pagination->total = $total;
+		$pagination->page = $page;
+		$pagination->limit = $limit;
+		$pagination->url = $this->url->link('extension/module/vm_theme/car', $url . '&sort=' . $sort . '&order=' . $order . '&limit=' . $limit . '&page={page}');
+
+		$data['pagination'] = $pagination->render();
+		$data['results'] = sprintf($this->language->get('text_pagination'), $total ? (($page - 1) * $limit) + 1 : 0, ((($page - 1) * $limit) > ($total - $limit)) ? $total : ((($page - 1) * $limit) + $limit), $total, ceil($total / $limit));
+		$data['sort'] = $sort;
+		$data['order'] = $order;
+		$data['limit'] = $limit;
+		$data['text_empty'] = $t['text_car_empty'];
+		$data['continue'] = $this->url->link('common/home');
+
+		if ($page == 1) {
+			$this->document->addLink($this->url->link('extension/module/vm_theme/car', $url), 'canonical');
+		}
+
+		$data['column_left'] = '';
+		$data['column_right'] = '';
+		$data['content_top'] = '';
+		$data['content_bottom'] = '';
+		$data['footer'] = $this->load->controller('common/footer');
+		$data['header'] = $this->load->controller('common/header');
+
+		$this->response->setOutput($this->load->view('product/category', $data));
 	}
 }

@@ -1,0 +1,21 @@
+<div class="vm-carbar{% if carbar_compact %} vm-carbar-compact{% endif %}" data-vm-car{% if carbar_garage and vm_garage %} data-garage="1"{% endif %}>
+  {% if carbar_garage and vm_garage %}
+  <div class="vm-carbar-garage">
+    <span class="vm-carbar-car"><i class="fa fa-car"></i></span>
+    <div class="vm-carbar-gtext"><small>{{ vm_t.text_car_yours }}</small><b>{{ vm_garage.label }}</b></div>
+    <a class="vm-cf-go" href="{{ vm_garage.href }}">{{ vm_t.text_car_go }} <i class="fa fa-angle-right"></i></a>
+    <button type="button" class="vm-carbar-link" data-car-change>{{ vm_t.text_car_change }}</button>
+    <a class="vm-carbar-x" href="index.php?route=extension/module/vm_theme/carClear" title="{{ vm_t.text_car_forget }}" aria-label="{{ vm_t.text_car_forget }}">&times;</a>
+  </div>
+  {% endif %}
+  {% if carbar_compact and carbar_label %}<button type="button" class="vm-carbar-sum" onclick="this.parentNode.classList.add('is-changing')"><i class="fa fa-car"></i><b>{{ carbar_label }}</b><span>{{ vm_t.text_car_change }}</span></button>{% endif %}
+  <div class="vm-carbar-pick">
+    {% if not carbar_compact %}<div class="vm-carbar-title"><b>{{ vm_t.text_car_title }}</b><small>{{ vm_t.text_car_sub }}</small></div>{% endif %}
+    <div class="vm-carbar-form">
+      <button type="button" class="vm-cf" data-step="make"><span>{{ vm_t.text_car_make }}</span><i class="fa fa-angle-down"></i></button>
+      <button type="button" class="vm-cf" data-step="model" disabled><span>{{ vm_t.text_car_model }}</span><i class="fa fa-angle-down"></i></button>
+      <button type="button" class="vm-cf" data-step="year" disabled><span>{{ vm_t.text_car_year }}</span><i class="fa fa-angle-down"></i></button>
+      <button type="button" class="vm-cf-go" data-go disabled>{{ vm_t.text_car_show }}</button>
+    </div>
+  </div>
+</div>

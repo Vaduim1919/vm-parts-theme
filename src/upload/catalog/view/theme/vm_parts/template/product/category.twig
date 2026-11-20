@@ -15,6 +15,18 @@
     {% endif %}
     <div id="content" class="{{ class }} vm-content">{{ content_top }}
       <h2>{{ heading_title }}</h2>
+      {% if vm_car_page %}
+      {{ vm_car_page.bar }}
+      <p class="vm-car-found">{{ vm_t.text_car_found|format(vm_car_page.total, vm_car_page.label) }}</p>
+      {% if vm_car_page.chips %}
+      <div class="vm-chips">
+        <a href="{{ vm_car_page.all }}" class="vm-chip{% if not vm_car_page.cat %} is-active{% endif %}">{{ vm_t.text_car_all_cats }}</a>
+        {% for c in vm_car_page.chips %}<a href="{{ c.href }}" class="vm-chip{% if c.active %} is-active{% endif %}{% if not c.top %} vm-chip-sub{% endif %}">{{ c.name }} <em>{{ c.count }}</em></a>{% endfor %}
+      </div>
+      {% endif %}
+      {% elseif vm_garage_cat %}
+      <a class="vm-garage-strip" href="{{ vm_garage_cat }}"><i class="fa fa-car"></i> {{ vm_t.text_car_only|format(vm_garage.label) }} <i class="fa fa-angle-right"></i></a>
+      {% endif %}
       {% if thumb or description %}
       <div class="row"> {% if thumb %}
         <div class="col-sm-2"><img src="{{ thumb }}" alt="{{ heading_title }}" title="{{ heading_title }}" class="img-thumbnail" /></div>

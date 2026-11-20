@@ -32,7 +32,8 @@
               <li>{{ text_model }} <b>{{ model }}</b></li>
               {% if reward %}<li>{{ text_reward }} {{ reward }}</li>{% endif %}
             </ul>
-            {% if vm_product.vm_fit %}<div class="vm-pp-fit"><i class="fa fa-check-circle"></i> {{ vm_t.text_fits }}: {{ vm_product.vm_fit }}</div>{% endif %}
+            {% if vm_product.vm_fit %}<div class="vm-pp-fit"><i class="fa fa-check-circle"></i> {{ vm_t.text_car_fits_yours }}: <b>{{ vm_product.vm_fit }}</b></div>
+            {% elseif vm_nofit %}<div class="vm-pp-nofit"><i class="fa fa-exclamation-triangle"></i> {{ vm_t.text_car_nofit|format(vm_nofit) }}</div>{% endif %}
             <div class="vm-pp-pricebox">
               {% if price %}
               <div class="vm-pp-price">{% if not special %}<b>{{ price }}</b>{% else %}<s>{{ price }}</s> <b class="vm-price-new">{{ special }}</b>{% endif %}</div>
