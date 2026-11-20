@@ -479,8 +479,9 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		}
 
 		if (isset($this->request->post['photos'])) {
-			$this->load->model('setting/setting');
-			$this->model_setting_setting->editSettingValue('module_vm_catalog', 'module_vm_catalog_yml_photos', (string)max(1, min(6, (int)$this->request->post['photos'])));
+			$v = (string)max(1, min(6, (int)$this->request->post['photos']));
+			$this->db->query("DELETE FROM `" . DB_PREFIX . "setting` WHERE store_id = 0 AND `code` = 'module_vm_catalog' AND `key` = 'module_vm_catalog_yml_photos'");
+			$this->db->query("INSERT INTO `" . DB_PREFIX . "setting` SET store_id = 0, `code` = 'module_vm_catalog', `key` = 'module_vm_catalog_yml_photos', `value` = '" . $this->db->escape($v) . "', serialized = 0");
 			$this->config->set('module_vm_catalog_yml_photos', (string)max(1, min(6, (int)$this->request->post['photos'])));
 		}
 
