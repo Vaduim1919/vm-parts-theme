@@ -30,6 +30,25 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				$post[$key] = (string)$this->config->get($key);
 			}
 
+			// keep only real text edits (empty or unchanged = theme default)
+			if (isset($post['module_vm_theme_texts']) && is_array($post['module_vm_theme_texts'])) {
+				$clean = array();
+
+				foreach ($post['module_vm_theme_texts'] as $code => $rows) {
+					$defaults = $this->themeTexts($code);
+
+					foreach ((array)$rows as $k => $v) {
+						$v = trim((string)$v);
+
+						if ($v !== '' && isset($defaults[$k]) && html_entity_decode($v, ENT_QUOTES, 'UTF-8') !== $defaults[$k]) {
+							$clean[$code][$k] = $v;
+						}
+					}
+				}
+
+				$post['module_vm_theme_texts'] = $clean;
+			}
+
 			$this->model_setting_setting->editSetting('module_vm_theme', $post);
 			$this->session->data['success'] = $this->language->get('text_success');
 			$this->response->redirect($this->link());
@@ -71,6 +90,10 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			'module_vm_theme_schedule'  => array(),
 			'module_vm_theme_benefits'  => '',
 			'module_vm_theme_hero'      => array(),
+			'module_vm_theme_blocks'    => array(),
+			'module_vm_theme_promos'    => array(),
+			'module_vm_theme_texts'     => array(),
+			'module_vm_theme_seo_text'  => array(),
 			'module_vm_theme_hero_off'  => '',
 			'module_vm_theme_new_days'  => 30,
 			'module_vm_theme_fallback'  => '',
@@ -108,6 +131,86 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			$s += array('badge' => '', 'title' => '', 'text' => '', 'button' => '', 'link' => '', 'price' => '', 'image' => '');
 			$s['thumb'] = ($s['image'] && is_file(DIR_IMAGE . $s['image'])) ? $this->model_tool_image->resize($s['image'], 100, 100) : $data['placeholder'];
 			$data['hero_slides'][] = $s;
+		}
+
+		// home blocks
+		$bdef = array(
+			'top' => array('hero' => 1, 'modules' => 2, 'carbar' => 3, 'benefits' => 4),
+			'low' => array('hits' => 1, 'modules' => 2, 'promos' => 3, 'wall' => 4, 'makes' => 5, 'seo' => 6)
+		);
+		$blim = array('hits' => 10, 'wall' => 12, 'makes' => 18);
+		$bcfg = is_array($data['module_vm_theme_blocks']) ? $data['module_vm_theme_blocks'] : array();
+		$data['block_rows'] = array();
+
+		foreach ($bdef as $zone => $list) {
+			foreach ($list as $key => $sort) {
+				$c = isset($bcfg[$zone][$key]) && is_array($bcfg[$zone][$key]) ? $bcfg[$zone][$key] : null;
+				$data['block_rows'][$zone][] = array(
+					'key'   => $key,
+					'name'  => $this->language->get('text_blk_' . $zone . '_' . $key),
+					'help'  => $this->language->get('help_blk_' . $zone . '_' . $key),
+					'on'    => $c === null ? true : !empty($c['on']),
+					'sort'  => ($c !== null && isset($c['sort']) && $c['sort'] !== '') ? (int)$c['sort'] : $sort,
+					'limit' => ($zone === 'low' && isset($blim[$key])) ? (($c !== null && !empty($c['limit'])) ? (int)$c['limit'] : $blim[$key]) : null
+				);
+			}
+
+			usort($data['block_rows'][$zone], function ($a, $b) {
+				return $a['sort'] - $b['sort'];
+			});
+		}
+
+		// manual promo tiles
+		$promos = is_array($data['module_vm_theme_promos']) ? array_values($data['module_vm_theme_promos']) : array();
+		$data['promo_rows'] = array();
+
+		for ($i = 0; $i < 3; $i++) {
+			$r = isset($promos[$i]) && is_array($promos[$i]) ? $promos[$i] : array();
+			$r += array('title' => '', 'text' => '', 'link' => '', 'image' => '');
+			$r['thumb'] = ($r['image'] && is_file(DIR_IMAGE . $r['image'])) ? $this->model_tool_image->resize($r['image'], 100, 100) : $data['placeholder'];
+			$data['promo_rows'][] = $r;
+		}
+
+		// texts of the storefront, per language
+		$this->load->model('localisation/language');
+		$over = is_array($data['module_vm_theme_texts']) ? $data['module_vm_theme_texts'] : array();
+		$seo = is_array($data['module_vm_theme_seo_text']) ? $data['module_vm_theme_seo_text'] : array();
+		$groups = $this->textGroups();
+		$data['text_langs'] = array();
+
+		foreach ($this->model_localisation_language->getLanguages() as $lang) {
+			$defaults = $this->themeTexts($lang['code']);
+
+			if (!$defaults) {
+				continue;
+			}
+
+			$sections = array();
+
+			foreach ($defaults as $k => $v) {
+				$g = 'other';
+
+				foreach ($groups as $gk => $prefixes) {
+					foreach ($prefixes as $pre) {
+						if (strpos($k, $pre) === 0) {
+							$g = $gk;
+							break 2;
+						}
+					}
+				}
+
+				$sections[$g][] = array('key' => $k, 'default' => $v, 'value' => isset($over[$lang['code']][$k]) ? $over[$lang['code']][$k] : '', 'long' => mb_strlen($v) > 70);
+			}
+
+			$ordered = array();
+
+			foreach (array_merge(array_keys($groups), array('other')) as $gk) {
+				if (!empty($sections[$gk])) {
+					$ordered[] = array('title' => $this->language->get('text_tg_' . $gk), 'rows' => $sections[$gk]);
+				}
+			}
+
+			$data['text_langs'][] = array('code' => $lang['code'], 'name' => $lang['name'], 'sections' => $ordered, 'edited' => isset($over[$lang['code']]) ? count($over[$lang['code']]) : 0, 'seo' => isset($seo[$lang['code']]) ? $seo[$lang['code']] : '');
 		}
 
 		$data['version'] = $this->model_extension_module_vm_theme->getVersion();
@@ -250,6 +353,37 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		}
 
 		$this->saveValue('module_vm_theme_moved', '');
+	}
+
+	// default storefront texts of the theme for one language (catalog language file)
+	private function themeTexts($code) {
+		$code = basename((string)$code);
+		$file = DIR_CATALOG . 'language/' . $code . '/extension/module/vm_theme.php';
+		$en = DIR_CATALOG . 'language/en-gb/extension/module/vm_theme.php';
+		$load = function ($f) {
+			$_ = array();
+
+			if (is_file($f)) {
+				include $f;
+			}
+
+			return $_;
+		};
+
+		return is_file($file) ? array_merge($load($en), $load($file)) : array();
+	}
+
+	private function textGroups() {
+		return array(
+			'header'  => array('text_catalog', 'text_all', 'text_callback', 'text_search', 'text_find', 'text_wishlist', 'text_account', 'text_cart', 'text_menu', 'text_home', 'text_chat', 'text_sale', 'text_contacts', 'text_s_', 'text_all_cats', 'text_cart_word'),
+			'home'    => array('text_hero', 'text_hits', 'text_all_short', 'text_promo', 'text_popular', 'text_by_make', 'text_need_help', 'text_write_us'),
+			'card'    => array('text_buy', 'text_code', 'text_fits', 'text_in_stock', 'text_out_stock', 'text_hit', 'text_new', 'text_qty', 'text_wh_', 'text_pop_', 'text_fav_'),
+			'product' => array('text_tab_', 'text_ch_', 'text_cmp_', 'text_compat', 'text_make', 'text_model_car', 'text_years', 'text_no_compat', 'text_desc_auto', 'text_oe', 'text_an_', 'text_now', 'text_all_years'),
+			'car'     => array('text_car_'),
+			'filter'  => array('text_f_'),
+			'account' => array('text_auth_', 'text_acc_', 'ac_'),
+			'footer'  => array('text_info', 'text_buyers', 'text_cabinet', 'text_social', 'text_delivery_box', 'text_payment_box', 'text_return_box', 'text_payments', 'text_footer_', 'text_sched_', 'text_day_', 'text_dshort_')
+		);
 	}
 
 	private function saveValue($key, $value) {

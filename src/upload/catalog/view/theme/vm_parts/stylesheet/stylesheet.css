@@ -1235,3 +1235,10 @@ body.vm a.vm-sg-all{display:flex;justify-content:center;align-items:center;gap:6
 .vm-top-status{display:inline-flex;align-items:center;gap:6px;font-weight:500}
 .vm-top-status.is-open{color:var(--vm-green-dark)}.vm-top-status.is-open i{background:var(--vm-green)}
 .vm-top-status.is-closed{color:var(--vm-red)}.vm-top-status.is-closed i{background:var(--vm-red)}
+
+/* ---------- 1.6.0 editable blocks ---------- */
+.vm-promo-img{position:absolute;right:16px;bottom:12px;max-width:120px;max-height:100px;object-fit:contain}
+.vm-promo:has(.vm-promo-img) > span:not(.vm-promo-ico){padding-right:120px}
+.vm-seo-text{margin-top:36px;background:#fff;border:1px solid var(--vm-line);border-radius:var(--vm-r);padding:22px 24px;color:var(--vm-muted);line-height:1.6}
+.vm-seo-text h2,.vm-seo-text h3{color:var(--vm-text);font-weight:900;margin-top:0}
+.vm-footer-about{color:rgba(255,255,255,.6);font-size:13px;line-height:1.5;margin:6px 0 10px;max-width:320px}

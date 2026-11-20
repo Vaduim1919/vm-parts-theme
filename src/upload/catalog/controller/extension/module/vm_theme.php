@@ -167,7 +167,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				$data['vm_cart_count'] = $this->cartCount();
 				$this->carBar($data);
 				$t = $this->texts();
-				$data['vm_js'] = json_encode(array(
+				$data['vm_js'] = json_encode(self::decodeAll(array(
 					'added'    => $t['text_pop_added'],
 					'incart'   => $t['text_pop_incart'],
 					'cont'     => $t['text_pop_continue'],
@@ -184,7 +184,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 					'checkout_url' => $this->url->link('checkout/checkout', '', true),
 					'wishlist' => $this->url->link('account/wishlist', '', true),
 					'login'    => $this->url->link('account/login', '', true)
-				), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+				)), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 				$this->header($data);
 				break;
 			case 'common/cart':
@@ -271,6 +271,18 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 			if (is_file($file)) {
 				include($file);
+			}
+
+			// edits made in the theme settings (tab "Texts"), per language
+			$over = $this->config->get('module_vm_theme_texts');
+			$code = basename((string)$this->config->get('config_language'));
+
+			if (is_array($over) && !empty($over[$code]) && is_array($over[$code])) {
+				foreach ($over[$code] as $k => $v) {
+					if (is_string($v) && trim($v) !== '' && isset($_[$k])) {
+						$_[$k] = $v;
+					}
+				}
 			}
 
 			self::$texts = $_;
@@ -1532,6 +1544,75 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		return 'fa-cubes';
 	}
 
+	public static function blockDefaults() {
+		return array(
+			'top' => array('hero' => 1, 'modules' => 2, 'carbar' => 3, 'benefits' => 4),
+			'low' => array('hits' => 1, 'modules' => 2, 'promos' => 3, 'wall' => 4, 'makes' => 5, 'seo' => 6),
+			'limit' => array('hits' => 10, 'wall' => 12, 'makes' => 18)
+		);
+	}
+
+	// order, on/off and sizes of the home blocks (theme settings, tab "Home blocks")
+	private function homeBlocks() {
+		$d = self::blockDefaults();
+		$cfg = $this->config->get('module_vm_theme_blocks');
+		$cfg = is_array($cfg) ? $cfg : array();
+		$out = array('top' => array(), 'low' => array(), 'limit' => $d['limit']);
+
+		foreach (array('top', 'low') as $zone) {
+			$list = array();
+
+			foreach ($d[$zone] as $key => $sort) {
+				$c = isset($cfg[$zone][$key]) && is_array($cfg[$zone][$key]) ? $cfg[$zone][$key] : null;
+				$on = $c === null ? true : !empty($c['on']);
+
+				if ($on) {
+					$list[$key] = ($c !== null && isset($c['sort']) && $c['sort'] !== '') ? (int)$c['sort'] : $sort;
+				}
+			}
+
+			asort($list);
+			$out[$zone] = array_keys($list);
+		}
+
+		foreach ($d['limit'] as $k => $v) {
+			if (isset($cfg['low'][$k]['limit']) && (int)$cfg['low'][$k]['limit'] > 0) {
+				$out['limit'][$k] = min(60, (int)$cfg['low'][$k]['limit']);
+			}
+		}
+
+		return $out;
+	}
+
+	private function manualPromos() {
+		$rows = $this->config->get('module_vm_theme_promos');
+		$out = array();
+
+		if (!is_array($rows)) {
+			return $out;
+		}
+
+		$t = $this->texts();
+		$this->load->model('tool/image');
+
+		foreach (array_values($rows) as $i => $r) {
+			if (!is_array($r) || trim(isset($r['title']) ? $r['title'] : '') === '') {
+				continue;
+			}
+
+			$out[] = array(
+				'name'  => $r['title'],
+				'text'  => isset($r['text']) ? $r['text'] : '',
+				'href'  => !empty($r['link']) ? $r['link'] : '#',
+				'tone'  => count($out) % 3,
+				'icon'  => self::catIcon($r['title']),
+				'image' => (!empty($r['image']) && is_file(DIR_IMAGE . $r['image'])) ? $this->model_tool_image->resize($r['image'], 160, 120) : ''
+			);
+		}
+
+		return $out;
+	}
+
 	private function hero() {
 		$t = $this->texts();
 		$slides = $this->config->get('module_vm_theme_hero');
@@ -1625,15 +1706,23 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$t = $this->texts();
 		$p = DB_PREFIX;
 
-		$data['vm_hero'] = $this->hero();
+		$bl = $this->homeBlocks();
+		$data['vm_top_blocks'] = $bl['top'];
+		$data['vm_blocks'] = $bl['low'];
+		$lim = $bl['limit'];
+		$data['vm_hero'] = in_array('hero', $bl['top'], true) ? $this->hero() : array();
+		$seo = $this->config->get('module_vm_theme_seo_text');
+		$code = basename((string)$this->config->get('config_language'));
+		$data['vm_seo_text'] = (is_array($seo) && !empty($seo[$code])) ? html_entity_decode($seo[$code], ENT_QUOTES, 'UTF-8') : '';
 
 		// hits: best sellers first, then fresh in-stock products with a photo
-		$ids = array_slice(array_keys($this->hitIds()), 0, 10);
+		$nh = in_array('hits', $bl['low'], true) ? $lim['hits'] : 0;
+		$ids = $nh ? array_slice(array_keys($this->hitIds()), 0, $nh) : array();
 
-		if (count($ids) < 10) {
+		if ($nh && count($ids) < $nh) {
 			$q = $this->db->query("SELECT p.product_id FROM `{$p}product` p INNER JOIN `{$p}product_to_store` p2s ON (p2s.product_id = p.product_id AND p2s.store_id = '" . (int)$this->config->get('config_store_id') . "')
 				WHERE p.status = '1' AND p.quantity > 0 AND p.date_available <= NOW()" . ($ids ? " AND p.product_id NOT IN (" . implode(',', $ids) . ")" : '') . "
-				ORDER BY (p.image <> '' AND p.image NOT LIKE '%placeholder%') DESC, p.date_added DESC LIMIT " . (10 - count($ids)));
+				ORDER BY (p.image <> '' AND p.image NOT LIKE '%placeholder%') DESC, p.date_added DESC LIMIT " . ($nh - count($ids)));
 
 			foreach ($q->rows as $r) {
 				$ids[] = (int)$r['product_id'];
@@ -1695,14 +1784,20 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		$data['vm_promos'] = array();
 
-		foreach (array_slice($tops, 0, 3) as $i => $c) {
+		$manual = $this->manualPromos();
+
+		foreach ($manual ? array() : array_slice($tops, 0, 3) as $i => $c) {
 			$data['vm_promos'][] = array('name' => $c['name'], 'text' => sprintf($t['text_promo_count'], number_format($c['count'], 0, '', ' ')), 'href' => $this->catHref($c['id'], 0), 'tone' => $i, 'icon' => self::catIcon($c['name']));
 		}
 
 		$this->load->model('tool/image');
 		$data['vm_wall'] = array();
 
-		foreach (array_slice($subs ? $subs : $tops, 0, 12) as $c) {
+		if ($manual) {
+			$data['vm_promos'] = $manual;
+		}
+
+		foreach (array_slice($subs ? $subs : $tops, 0, in_array('wall', $bl['low'], true) ? $lim['wall'] : 0) as $c) {
 			$data['vm_wall'][] = array(
 				'name'  => $c['name'],
 				'count' => $c['count'],
@@ -1719,7 +1814,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		});
 		$data['vm_makes'] = array();
 
-		foreach (array_slice($makes, 0, 18) as $m) {
+		foreach (array_slice($makes, 0, in_array('makes', $bl['low'], true) ? $lim['makes'] : 0) as $m) {
 			$data['vm_makes'][] = array('name' => $m['name'], 'letter' => mb_substr($m['name'], 0, 1, 'UTF-8'), 'count' => $m['count'], 'href' => $this->url->link('extension/module/vm_theme/car', 'make_id=' . $m['id']));
 		}
 
@@ -1732,6 +1827,16 @@ class ControllerExtensionModuleVmTheme extends Controller {
 	// Makes / models / years come from vm_make, vm_model, vm_product_vehicle (filled by V&M Catalog from BM Parts).
 
 	private static $popular = array('volkswagen', 'vw', 'skoda', 'renault', 'toyota', 'ford', 'opel', 'hyundai', 'kia', 'bmw', 'mercedes-benz', 'audi', 'nissan', 'chevrolet', 'daewoo', 'mitsubishi', 'mazda', 'peugeot', 'citroen', 'honda', 'fiat', 'lexus', 'dacia', 'subaru');
+
+	public static function decodeAll($a) {
+		foreach ($a as $k => $v) {
+			if (is_string($v)) {
+				$a[$k] = html_entity_decode($v, ENT_QUOTES, 'UTF-8');
+			}
+		}
+
+		return $a;
+	}
 
 	public static function prettyName($name) {
 		$name = trim((string)$name);
@@ -1993,12 +2098,12 @@ class ControllerExtensionModuleVmTheme extends Controller {
 					'results' => html_entity_decode($this->url->link('extension/module/vm_theme/car'), ENT_QUOTES, 'UTF-8'),
 					'clear'   => html_entity_decode($this->url->link('extension/module/vm_theme/carClear'), ENT_QUOTES, 'UTF-8')
 				),
-				't' => array(
+				't' => self::decodeAll(array(
 					'make' => $t['text_car_make'], 'model' => $t['text_car_model'], 'year' => $t['text_car_year'],
 					'all_years' => $t['text_car_all_years'], 'all_models' => $t['text_car_all_models'], 'popular' => $t['text_car_popular'], 'all_makes' => $t['text_car_all_makes'],
 					'search_make' => $t['text_car_search_make'], 'search_model' => $t['text_car_search_model'], 'nothing' => $t['text_car_nothing'],
 					'loading' => $t['text_car_loading'], 'show' => $t['text_car_show'], 'show_n' => $t['text_car_show_n'], 'parts' => $t['text_car_parts'], 'pick_make' => $t['text_car_pick_make'], 'back' => $t['text_car_back'], 'title' => $t['text_car_title'], 'forget' => $t['text_car_forget']
-				)
+				))
 			), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)
 		);
 	}

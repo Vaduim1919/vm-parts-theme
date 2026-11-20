@@ -206,3 +206,7 @@ $_['text_sched_today'] = 'today';
 $_['text_sched_tomorrow'] = 'tomorrow';
 $_['text_sched_title'] = 'Opening hours';
 $_['text_sched_order'] = 'Online orders are accepted 24/7';
+$_['text_hero_chip1'] = 'Vinnytsia';
+$_['text_hero_chip2'] = 'VIN';
+$_['text_hero_chip3'] = '1–2 days';
+$_['text_footer_about'] = '';

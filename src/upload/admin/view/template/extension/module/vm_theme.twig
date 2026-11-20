@@ -59,6 +59,8 @@
           <ul class="nav nav-tabs">
             <li class="active"><a href="#tab-general" data-toggle="tab">{{ tab_general }}</a></li>
             <li><a href="#tab-home" data-toggle="tab">{{ tab_home }}</a></li>
+            <li><a href="#tab-blocks" data-toggle="tab">{{ tab_blocks }}</a></li>
+            <li><a href="#tab-texts" data-toggle="tab">{{ tab_texts }}</a></li>
             <li><a href="#tab-code" data-toggle="tab">{{ tab_code }}</a></li>
             <li><a href="#tab-update" data-toggle="tab">{{ tab_update }} <span class="label label-default">{{ version }}</span></a></li>
           </ul>
@@ -118,6 +120,71 @@
               <div class="form-group"><label class="col-sm-3 control-label" for="i-ben">{{ entry_benefits }}</label><div class="col-sm-9"><textarea id="i-ben" name="module_vm_theme_benefits" rows="5" class="form-control">{{ module_vm_theme_benefits }}</textarea><p class="help-block">{{ help_benefits }}</p></div></div>
               <div class="form-group"><label class="col-sm-3 control-label" for="i-new">{{ entry_new_days }}</label><div class="col-sm-9"><input id="i-new" type="number" name="module_vm_theme_new_days" value="{{ module_vm_theme_new_days }}" class="form-control"></div></div>
             </div>
+            <div class="tab-pane" id="tab-blocks">
+              <p class="help-block">{{ help_blocks }}</p>
+              {% for zone in ['top', 'low'] %}
+              <h4>{{ zone == 'top' ? text_blk_zone_top : text_blk_zone_low }}</h4>
+              <table class="table table-bordered table-condensed vm-blk-table" style="max-width:860px">
+                <thead><tr><th style="width:60px">{{ text_blk_on }}</th><th>{{ text_blk_name }}</th><th style="width:120px">{{ text_blk_order }}</th><th style="width:130px">{{ text_blk_limit }}</th></tr></thead>
+                <tbody>
+                {% for r in block_rows[zone] %}
+                <tr>
+                  <td class="text-center"><input type="hidden" name="module_vm_theme_blocks[{{ zone }}][{{ r.key }}][on]" value="0"><input type="checkbox" name="module_vm_theme_blocks[{{ zone }}][{{ r.key }}][on]" value="1"{% if r.on %} checked{% endif %}></td>
+                  <td><b>{{ r.name }}</b>{% if r.help %}<br><small class="text-muted">{{ r.help }}</small>{% endif %}</td>
+                  <td><div class="input-group input-group-sm"><input type="number" class="form-control vm-blk-sort" name="module_vm_theme_blocks[{{ zone }}][{{ r.key }}][sort]" value="{{ r.sort }}" style="min-width:50px"><span class="input-group-btn"><button type="button" class="btn btn-default vm-blk-up" title="↑"><i class="fa fa-arrow-up"></i></button><button type="button" class="btn btn-default vm-blk-down" title="↓"><i class="fa fa-arrow-down"></i></button></span></div></td>
+                  <td>{% if r.limit is not null %}<input type="number" min="1" max="60" class="form-control input-sm" name="module_vm_theme_blocks[{{ zone }}][{{ r.key }}][limit]" value="{{ r.limit }}">{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+              {% endfor %}
+              <fieldset><legend>{{ text_promos }}</legend>
+                <p class="help-block">{{ help_promos }}</p>
+                {% for r in promo_rows %}{% set i = loop.index0 %}
+                <div class="row" style="margin-bottom:10px;max-width:960px">
+                  <div class="col-sm-2"><a href="" id="thumb-promo{{ i }}" data-toggle="image" class="img-thumbnail"><img src="{{ r.thumb }}" alt="" data-placeholder="{{ placeholder }}" /></a><input type="hidden" name="module_vm_theme_promos[{{ i }}][image]" value="{{ r.image }}" id="input-promo{{ i }}" /></div>
+                  <div class="col-sm-10">
+                    <input type="text" name="module_vm_theme_promos[{{ i }}][title]" value="{{ r.title }}" class="form-control" placeholder="{{ ph_promo_title }}">
+                    <input type="text" name="module_vm_theme_promos[{{ i }}][text]" value="{{ r.text }}" class="form-control" placeholder="{{ ph_promo_text }}" style="margin-top:6px">
+                    <input type="text" name="module_vm_theme_promos[{{ i }}][link]" value="{{ r.link }}" class="form-control" placeholder="{{ ph_promo_link }}" style="margin-top:6px">
+                  </div>
+                </div>
+                {% endfor %}
+              </fieldset>
+            </div>
+            <div class="tab-pane" id="tab-texts">
+              <style>#tab-texts .vm-tx-row{margin:0 0 0 0;padding:5px 0;border-bottom:1px solid #f3f4f6}#tab-texts .vm-tx-row .control-label{padding-top:0}#tab-texts .vm-tx-row.vm-tx-ed label{color:#1e7e34!important}</style>
+              <p class="help-block">{{ help_texts }}</p>
+              <div class="row" style="margin-bottom:10px">
+                <div class="col-sm-6"><input type="text" id="vm-tx-find" class="form-control" placeholder="{{ text_tx_find }}"></div>
+                <div class="col-sm-6"><label class="checkbox-inline"><input type="checkbox" id="vm-tx-edited"> {{ text_tx_edited }}</label></div>
+              </div>
+              <ul class="nav nav-pills" style="margin-bottom:12px">
+                {% for l in text_langs %}<li{% if loop.first %} class="active"{% endif %}><a href="#tx-{{ l.code }}" data-toggle="tab">{{ l.name }}{% if l.edited %} <span class="badge">{{ l.edited }}</span>{% endif %}</a></li>{% endfor %}
+              </ul>
+              <div class="tab-content">
+                {% for l in text_langs %}
+                <div class="tab-pane{% if loop.first %} active{% endif %}" id="tx-{{ l.code }}">
+                  {% for sec in l.sections %}
+                  <div class="vm-tx-sec">
+                    <h4 style="margin-top:18px;border-bottom:1px solid #e3e6ea;padding-bottom:6px">{{ sec.title }}</h4>
+                    {% for r in sec.rows %}
+                    <div class="form-group vm-tx-row{% if r.value %} vm-tx-ed{% endif %}" data-k="{{ r.key }} {{ r.default|lower|e }}" style="margin-bottom:8px">
+                      <label class="col-sm-4 control-label" style="font-weight:normal;text-align:left;color:#666;font-size:12px;padding-top:4px">{{ r.default|e }}<br><code style="font-size:10px;color:#aaa;background:none;padding:0">{{ r.key }}</code></label>
+                      <div class="col-sm-8">{% if r.long %}<textarea name="module_vm_theme_texts[{{ l.code }}][{{ r.key }}]" rows="2" class="form-control input-sm" placeholder="{{ r.default|e }}">{{ r.value }}</textarea>{% else %}<input type="text" name="module_vm_theme_texts[{{ l.code }}][{{ r.key }}]" value="{{ r.value }}" class="form-control input-sm" placeholder="{{ r.default|e }}">{% endif %}</div>
+                    </div>
+                    {% endfor %}
+                  </div>
+                  {% endfor %}
+                  <div class="vm-tx-sec">
+                    <h4 style="margin-top:18px;border-bottom:1px solid #e3e6ea;padding-bottom:6px">{{ text_seo_title }}</h4>
+                    <p class="help-block">{{ help_seo }}</p>
+                    <textarea name="module_vm_theme_seo_text[{{ l.code }}]" rows="8" class="form-control" style="font-family:monospace;font-size:12px">{{ l.seo }}</textarea>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
             <div class="tab-pane" id="tab-code">
               <div class="form-group"><label class="col-sm-3 control-label" for="i-head">{{ entry_head_code }}</label><div class="col-sm-9"><textarea id="i-head" name="module_vm_theme_head_code" rows="14" class="form-control" style="font-family:monospace;font-size:12px">{{ module_vm_theme_head_code }}</textarea><p class="help-block">{{ help_head_code }}</p></div></div>
               <div class="form-group"><label class="col-sm-3 control-label" for="i-body">{{ entry_body_code }}</label><div class="col-sm-9"><textarea id="i-body" name="module_vm_theme_body_code" rows="5" class="form-control" style="font-family:monospace;font-size:12px">{{ module_vm_theme_body_code }}</textarea></div></div>
@@ -162,5 +229,24 @@
     }, 'json').fail(function (x) { $u.prop('disabled', false); $r.html('<div class="alert alert-danger">' + esc(failText(x)) + '</div>'); });
   });
 })();
-//--></script>
+//-->
+// blocks: up/down reorder renumbers the sort fields
+$(document).on('click', '.vm-blk-up, .vm-blk-down', function () {
+  var tr = $(this).closest('tr'), tb = tr.parent();
+  if ($(this).hasClass('vm-blk-up')) { tr.prev().before(tr); } else { tr.next().after(tr); }
+  tb.find('tr').each(function (i) { $(this).find('.vm-blk-sort').val(i + 1); });
+});
+// texts: search and "edited only"
+function vmTxFilter() {
+  var v = $.trim($('#vm-tx-find').val().toLowerCase()), ed = $('#vm-tx-edited').is(':checked');
+  $('.vm-tx-row').each(function () {
+    var r = $(this), val = r.find('input,textarea').val();
+    var hit = (!v || r.attr('data-k').indexOf(v) > -1 || (val && val.toLowerCase().indexOf(v) > -1)) && (!ed || $.trim(val) !== '');
+    r.toggle(!!hit);
+  });
+  $('.vm-tx-sec').each(function () { var s = $(this); if (s.find('.vm-tx-row').length) s.toggle(s.find('.vm-tx-row:visible').length > 0); });
+}
+$(document).on('input', '#vm-tx-find', vmTxFilter);
+$(document).on('change', '#vm-tx-edited', vmTxFilter);
+</script>
 {{ footer }}

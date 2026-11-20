@@ -206,3 +206,7 @@ $_['text_sched_today'] = 'сегодня';
 $_['text_sched_tomorrow'] = 'завтра';
 $_['text_sched_title'] = 'График работы';
 $_['text_sched_order'] = 'Заказы на сайте принимаем круглосуточно';
+$_['text_hero_chip1'] = 'Винница';
+$_['text_hero_chip2'] = 'VIN';
+$_['text_hero_chip3'] = '1–2 дня';
+$_['text_footer_about'] = '';

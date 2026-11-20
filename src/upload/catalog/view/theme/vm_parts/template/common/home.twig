@@ -19,6 +19,8 @@
       {{ column_left }}
     </aside>
     <div class="vm-home-main">
+      {% for blk in vm_top_blocks %}
+      {% if blk == 'hero' %}
       {% if vm_hero %}
       <div class="vm-hero" data-vm-hero>
         {% for s in vm_hero %}
@@ -29,14 +31,17 @@
             {% if s.text %}<p>{{ s.text }}</p>{% endif %}
             <div class="vm-hero-cta"><a class="vm-hero-btn" href="{{ s.link }}">{{ s.button }}</a>{% if s.price %}<span class="vm-hero-price">{{ s.price }}</span>{% endif %}</div>
           </div>
-          <div class="vm-hero-media{% if not s.image %} vm-hero-art{% endif %}">{% if s.image %}<img src="{{ s.image }}" alt="{{ s.badge }}" loading="{% if loop.first %}eager{% else %}lazy{% endif %}">{% else %}<i class="fa fa-car"></i><span class="vm-hero-chip vm-hc1"><i class="fa fa-map-marker"></i> Вінниця</span><span class="vm-hero-chip vm-hc2"><i class="fa fa-barcode"></i> VIN</span><span class="vm-hero-chip vm-hc3"><i class="fa fa-truck"></i> 1–2 дні</span>{% endif %}</div>
+          <div class="vm-hero-media{% if not s.image %} vm-hero-art{% endif %}">{% if s.image %}<img src="{{ s.image }}" alt="{{ s.badge }}" loading="{% if loop.first %}eager{% else %}lazy{% endif %}">{% else %}<i class="fa fa-car"></i>{% if vm_t.text_hero_chip1 %}<span class="vm-hero-chip vm-hc1"><i class="fa fa-map-marker"></i> {{ vm_t.text_hero_chip1 }}</span>{% endif %}{% if vm_t.text_hero_chip2 %}<span class="vm-hero-chip vm-hc2"><i class="fa fa-barcode"></i> {{ vm_t.text_hero_chip2 }}</span>{% endif %}{% if vm_t.text_hero_chip3 %}<span class="vm-hero-chip vm-hc3"><i class="fa fa-truck"></i> {{ vm_t.text_hero_chip3 }}</span>{% endif %}{% endif %}</div>
         </div>
         {% endfor %}
         {% if vm_hero|length > 1 %}<div class="vm-hero-dots">{% for s in vm_hero %}<button type="button" class="{% if loop.first %}is-active{% endif %}" aria-label="{{ loop.index }}"></button>{% endfor %}</div>{% endif %}
       </div>
       {% endif %}
+      {% elseif blk == 'modules' %}
       {{ content_top }}
+      {% elseif blk == 'carbar' %}
       {{ vm_carbar_html }}
+      {% elseif blk == 'benefits' %}
   {% if vm.benefits %}
       <div class="vm-benefits">
         {% for b in vm.benefits %}
@@ -44,9 +49,13 @@
         {% endfor %}
       </div>
       {% endif %}
+      {% endif %}
+      {% endfor %}
     </div>
   </div>
 
+  {% for blk in vm_blocks %}
+  {% if blk == 'hits' %}
   {% if vm_hits %}
   <section class="vm-hits" data-vm-tabs>
     <div class="vm-sec-head"><h2 class="vm-h2">{{ vm_t.text_hits }}</h2>
@@ -71,12 +80,15 @@
     </div>
   </section>
   {% endif %}
+  {% elseif blk == 'modules' %}
   {{ content_bottom }}
+  {% elseif blk == 'promos' %}
   {% if vm_promos %}
   <div class="vm-promos">
-    {% for pr in vm_promos %}<a class="vm-promo vm-promo-{{ pr.tone }}" href="{{ pr.href }}"><span class="vm-promo-ico"><i class="fa {{ pr.icon }}"></i></span><span><b>{{ pr.name }}</b><small>{{ pr.text }}</small></span><em>{{ vm_t.text_promo_go }} →</em></a>{% endfor %}
+    {% for pr in vm_promos %}<a class="vm-promo vm-promo-{{ pr.tone }}" href="{{ pr.href }}">{% if pr.image %}<img class="vm-promo-img" src="{{ pr.image }}" alt="{{ pr.name }}" loading="lazy">{% else %}<span class="vm-promo-ico"><i class="fa {{ pr.icon }}"></i></span>{% endif %}<span><b>{{ pr.name }}</b><small>{{ pr.text }}</small></span><em>{{ vm_t.text_promo_go }} →</em></a>{% endfor %}
   </div>
   {% endif %}
+  {% elseif blk == 'wall' %}
   {% if vm_wall %}
   <h2 class="vm-h2">{{ vm_t.text_popular_cats }}</h2>
   <div class="vm-wall">
@@ -85,12 +97,17 @@
     {% endfor %}
   </div>
   {% endif %}
+  {% elseif blk == 'makes' %}
   {% if vm_makes %}
   <h2 class="vm-h2">{{ vm_t.text_by_make }}</h2>
   <div class="vm-makes">
     {% for m in vm_makes %}<a href="{{ m.href }}" class="vm-make"><span>{{ m.letter }}</span><b>{{ m.name }}</b><small>{{ m.count }}</small></a>{% endfor %}
   </div>
   {% endif %}
+  {% elseif blk == 'seo' %}
+  {% if vm_seo_text %}<section class="vm-seo-text">{{ vm_seo_text }}</section>{% endif %}
+  {% endif %}
+  {% endfor %}
   {{ column_right }}
 </div>
 {{ footer }}
