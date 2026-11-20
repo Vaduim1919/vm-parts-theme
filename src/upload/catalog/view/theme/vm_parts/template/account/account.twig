@@ -1,0 +1,67 @@
+{{ header }}
+<div id="account-account" class="container vm-acc">
+  <ul class="breadcrumb">
+    {% for breadcrumb in breadcrumbs %}<li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>{% endfor %}
+  </ul>
+  {% if success %}<div class="alert alert-success alert-dismissible"><i class="fa fa-check-circle"></i> {{ success }}</div>{% endif %}
+  {{ content_top }}
+  <div class="vm-acc-head">
+    <span class="vm-acc-avatar">{% if vm_acc_name %}{{ vm_acc_name|slice(0,1)|upper }}{% else %}<i class="fa fa-user"></i>{% endif %}</span>
+    <div class="vm-acc-hello"><h1>{% if vm_acc_name %}{{ vm_t.text_acc_hi|format(vm_acc_name) }}{% else %}{{ vm_t.text_acc_hi0 }}{% endif %}</h1>{% if vm_acc_email %}<span>{{ vm_acc_email }}</span>{% endif %}</div>
+    <div class="vm-acc-stats">
+      <a href="{{ order }}"><b>{{ vm_acc_orders_total }}</b><small>{{ vm_t.text_acc_orders }}</small></a>
+      <a href="{{ wishlist }}"><b>{{ vm_acc_wish_total }}</b><small>{{ vm_t.text_acc_wish }}</small></a>
+      <a href="{{ vm_acc_cart }}"><b>{{ vm_acc_cart_total }}</b><small>{{ vm_t.text_acc_cart }}</small></a>
+    </div>
+    <a class="vm-acc-logout" href="{{ vm_acc_logout }}"><i class="fa fa-sign-out"></i> {{ vm_t.text_acc_logout }}</a>
+  </div>
+
+  <div class="vm-acc-grid">
+    <section class="vm-acc-card vm-acc-orders">
+      <div class="vm-acc-card-h"><h2>{{ vm_t.text_acc_last }}</h2>{% if vm_acc_orders %}<a href="{{ order }}">{{ vm_t.text_acc_all_orders }} →</a>{% endif %}</div>
+      {% if vm_acc_orders %}
+      <ul class="vm-acc-olist">
+        {% for o in vm_acc_orders %}
+        <li><a href="{{ o.href }}"><span class="vm-acc-oid">№{{ o.id }}<small>{{ o.date }} · {{ vm_t.text_acc_items|format(o.items) }}</small></span><span class="vm-acc-ost">{{ o.status }}</span><b>{{ o.total }}</b><i class="fa fa-angle-right"></i></a></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="vm-acc-empty"><i class="fa fa-shopping-bag"></i><p>{{ vm_t.text_acc_no_orders }}</p><a href="{{ vm_home }}" class="vm-acc-btn">{{ vm_t.text_acc_to_catalog }}</a></div>
+      {% endif %}
+    </section>
+
+    <section class="vm-acc-card">
+      <div class="vm-acc-card-h"><h2>{{ vm_t.text_acc_sec_orders }}</h2></div>
+      <div class="vm-acc-tiles">
+        <a href="{{ order }}" class="vm-acc-tile"><span class="vm-acc-ico"><i class="fa fa-list-alt"></i></span><span><b>{{ vm_t.ac_order }}</b><small>{{ vm_t.ac_order_d }}</small></span></a>
+        <a href="{{ return }}" class="vm-acc-tile"><span class="vm-acc-ico vm-ico-o"><i class="fa fa-undo"></i></span><span><b>{{ vm_t.ac_return }}</b><small>{{ vm_t.ac_return_d }}</small></span></a>
+        <a href="{{ wishlist }}" class="vm-acc-tile"><span class="vm-acc-ico vm-ico-r"><i class="fa fa-heart"></i></span><span><b>{{ vm_t.ac_wishlist }}</b><small>{{ vm_t.ac_wishlist_d }}</small></span></a>
+      </div>
+    </section>
+
+    <section class="vm-acc-card">
+      <div class="vm-acc-card-h"><h2>{{ vm_t.text_acc_sec_profile }}</h2></div>
+      <div class="vm-acc-tiles">
+        <a href="{{ edit }}" class="vm-acc-tile"><span class="vm-acc-ico"><i class="fa fa-user"></i></span><span><b>{{ vm_t.ac_edit }}</b><small>{{ vm_t.ac_edit_d }}</small></span></a>
+        <a href="{{ address }}" class="vm-acc-tile"><span class="vm-acc-ico vm-ico-g"><i class="fa fa-map-marker"></i></span><span><b>{{ vm_t.ac_address }}</b><small>{{ vm_t.ac_address_d }}</small></span></a>
+        <a href="{{ password }}" class="vm-acc-tile"><span class="vm-acc-ico"><i class="fa fa-lock"></i></span><span><b>{{ vm_t.ac_password }}</b><small>{{ vm_t.ac_password_d }}</small></span></a>
+        <a href="{{ newsletter }}" class="vm-acc-tile"><span class="vm-acc-ico vm-ico-g"><i class="fa fa-envelope"></i></span><span><b>{{ vm_t.ac_newsletter }}</b><small>{{ vm_t.ac_newsletter_d }}</small></span></a>
+      </div>
+    </section>
+
+    <section class="vm-acc-card vm-acc-more">
+      <div class="vm-acc-card-h"><h2>{{ vm_t.text_acc_sec_more }}</h2></div>
+      <div class="vm-acc-links">
+        {% if reward %}<a href="{{ reward }}"><i class="fa fa-star"></i> {{ vm_t.ac_reward }}</a>{% endif %}
+        <a href="{{ transaction }}"><i class="fa fa-exchange"></i> {{ vm_t.ac_transaction }}</a>
+        <a href="{{ download }}"><i class="fa fa-download"></i> {{ vm_t.ac_download }}</a>
+        <a href="{{ recurring }}"><i class="fa fa-refresh"></i> {{ vm_t.ac_recurring }}</a>
+        <a href="{{ affiliate }}"><i class="fa fa-handshake-o"></i> {{ vm_t.ac_affiliate }}</a>
+        {% if tracking %}<a href="{{ tracking }}"><i class="fa fa-link"></i> {{ text_tracking }}</a>{% endif %}
+        {% for credit_card in credit_cards %}<a href="{{ credit_card.href }}"><i class="fa fa-credit-card"></i> {{ credit_card.name }}</a>{% endfor %}
+      </div>
+    </section>
+  </div>
+  {{ content_bottom }}
+</div>
+{{ footer }}

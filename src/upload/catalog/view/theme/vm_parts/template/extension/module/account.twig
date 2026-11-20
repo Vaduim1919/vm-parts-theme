@@ -1,0 +1,17 @@
+<nav class="vm-acc-side">
+  {% if not logged %}
+  <a href="{{ login }}"><i class="fa fa-sign-in"></i> {{ text_login }}</a>
+  <a href="{{ register }}"><i class="fa fa-user-plus"></i> {{ text_register }}</a>
+  <a href="{{ forgotten }}"><i class="fa fa-key"></i> {{ text_forgotten }}</a>
+  {% else %}
+  <a href="{{ account }}"><i class="fa fa-th-large"></i> {{ text_account }}</a>
+  <a href="{{ order }}"><i class="fa fa-list-alt"></i> {{ text_order }}</a>
+  <a href="{{ wishlist }}"><i class="fa fa-heart"></i> {{ text_wishlist }}</a>
+  <a href="{{ edit }}"><i class="fa fa-user"></i> {{ text_edit }}</a>
+  <a href="{{ address }}"><i class="fa fa-map-marker"></i> {{ text_address }}</a>
+  <a href="{{ password }}"><i class="fa fa-lock"></i> {{ text_password }}</a>
+  <a href="{{ return }}"><i class="fa fa-undo"></i> {{ text_return }}</a>
+  <a href="{{ newsletter }}"><i class="fa fa-envelope"></i> {{ text_newsletter }}</a>
+  <a href="{{ logout }}" class="vm-acc-side-out"><i class="fa fa-sign-out"></i> {{ text_logout }}</a>
+  {% endif %}
+</nav>

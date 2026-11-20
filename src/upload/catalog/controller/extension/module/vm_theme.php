@@ -192,6 +192,9 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				$data['vm_search_cats'] = $this->menu();
 				$data['vm_search_cat'] = isset($this->request->get['category_id']) ? (int)$this->request->get['category_id'] : 0;
 				break;
+			case 'account/account':
+				$this->accountPage($data);
+				break;
 			case 'common/home':
 				$data['vm_menu'] = $this->menu();
 				$data['vm_garage'] = $this->garage();
@@ -866,6 +869,38 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		}
 
 		$data['vm_garage'] = $garage;
+	}
+
+	// =============================================================== account dashboard (1.4.1)
+	private function accountPage(&$data) {
+		if (!$this->customer->isLogged()) {
+			return;
+		}
+
+		$this->load->model('account/order');
+		$this->load->model('account/wishlist');
+
+		$data['vm_acc_name'] = trim($this->customer->getFirstName());
+		$data['vm_acc_email'] = $this->customer->getEmail();
+		$data['vm_acc_logout'] = $this->url->link('account/logout', '', true);
+		$data['vm_acc_orders_total'] = (int)$this->model_account_order->getTotalOrders();
+		$data['vm_acc_wish_total'] = count((array)$this->model_account_wishlist->getWishlist());
+		$data['vm_acc_cart_total'] = $this->cartCount();
+		$data['vm_acc_cart'] = $this->url->link('checkout/cart');
+		$menu = $this->menu();
+		$data['vm_home'] = $menu ? $menu[0]['href'] : $this->url->link('common/home');
+		$data['vm_acc_orders'] = array();
+
+		foreach ((array)$this->model_account_order->getOrders(0, 3) as $o) {
+			$data['vm_acc_orders'][] = array(
+				'id'     => $o['order_id'],
+				'date'   => date('d.m.Y', strtotime($o['date_added'])),
+				'status' => $o['status'],
+				'total'  => $this->currency->format($o['total'], $o['currency_code'], $o['currency_value']),
+				'items'  => (int)$o['products'],
+				'href'   => $this->url->link('account/order/info', 'order_id=' . $o['order_id'], true)
+			);
+		}
 	}
 
 	// =============================================================== home page sections (1.4.0)
