@@ -172,6 +172,9 @@ class ControllerExtensionModuleVmTheme extends Controller {
 					'incart'   => $t['text_pop_incart'],
 					'cont'     => $t['text_pop_continue'],
 					'checkout' => $t['text_pop_checkout'],
+					's_all'    => $t['text_s_all'],
+					's_none'   => $t['text_s_none'],
+					's_buy'    => $t['text_buy'],
 					'qty'      => $t['text_pop_qty'],
 					'fav_add'  => $t['text_fav_added'],
 					'fav_has'  => $t['text_fav_has'],
@@ -879,6 +882,97 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		}
 
 		$data['vm_garage'] = $garage;
+	}
+
+	// =============================================================== live search (1.5.1)
+	// article prefix (supplier price keys) + OE numbers + name words; up to 8 products
+	public function suggest() {
+		$q = isset($this->request->get['q']) ? trim(html_entity_decode((string)$this->request->get['q'], ENT_QUOTES, 'UTF-8')) : '';
+		$out = array('items' => array(), 'all' => '');
+
+		if (mb_strlen($q) < 2 || mb_strlen($q) > 64) {
+			return $this->jsonOut($out);
+		}
+
+		$p = DB_PREFIX;
+		$lang = (int)$this->config->get('config_language_id');
+		$store = (int)$this->config->get('config_store_id');
+		$key = mb_substr(mb_strtoupper(preg_replace('/[\s\-\.\/\\\\]+/u', '', $q), 'UTF-8'), 0, 64, 'UTF-8');
+		$ids = array();
+		$why = array();
+		$active = " AND p.status = '1' AND p.date_available <= NOW() AND p.product_id IN (SELECT p2s.product_id FROM `{$p}product_to_store` p2s WHERE p2s.store_id = '" . $store . "')";
+
+		if ($key !== '' && mb_strlen($key) >= 2) {
+			// exact article first, then article prefix
+			if ($this->hasTable('vm_catalog_item')) {
+				foreach ($this->db->query("SELECT i.product_id, i.art_key = '" . $this->db->escape($key) . "' AS exact FROM `{$p}vm_catalog_item` i INNER JOIN `{$p}product` p ON (p.product_id = i.product_id)
+					WHERE i.art_key LIKE '" . $this->db->escape($key) . "%'" . $active . " ORDER BY exact DESC, p.quantity > 0 DESC, LENGTH(i.art_key) ASC LIMIT 8")->rows as $r) {
+					$ids[(int)$r['product_id']] = true;
+				}
+			}
+
+			if (count($ids) < 8) {
+				foreach ($this->db->query("SELECT p.product_id FROM `{$p}product` p WHERE (p.model LIKE '" . $this->db->escape($q) . "%' OR p.sku = '" . $this->db->escape($q) . "')" . $active . " ORDER BY p.quantity > 0 DESC LIMIT 8")->rows as $r) {
+					$ids[(int)$r['product_id']] = true;
+				}
+			}
+
+			if (count($ids) < 8 && mb_strlen($key) >= 4 && $this->hasTable('vm_catalog_oe')) {
+				foreach ($this->db->query("SELECT o.product_id, o.oe FROM `{$p}vm_catalog_oe` o INNER JOIN `{$p}product` p ON (p.product_id = o.product_id) WHERE o.oe_key LIKE '" . $this->db->escape($key) . "%'" . $active . " ORDER BY p.quantity > 0 DESC LIMIT 8")->rows as $r) {
+					if (!isset($ids[(int)$r['product_id']])) {
+						$ids[(int)$r['product_id']] = true;
+						$why[(int)$r['product_id']] = 'OE ' . $r['oe'];
+					}
+				}
+			}
+		}
+
+		// words in the name: every word must match
+		if (count($ids) < 8 && preg_match('/\p{L}{2,}/u', $q)) {
+			$words = array_slice(array_filter(preg_split('/\s+/u', $q), function ($w) {
+				return mb_strlen($w) >= 2;
+			}), 0, 5);
+
+			if ($words) {
+				$cond = array();
+
+				foreach ($words as $w) {
+					$cond[] = "pd.name LIKE '%" . $this->db->escape(addcslashes($w, '%_')) . "%'";
+				}
+
+				foreach ($this->db->query("SELECT p.product_id FROM `{$p}product_description` pd INNER JOIN `{$p}product` p ON (p.product_id = pd.product_id)
+					WHERE pd.language_id = '" . $lang . "' AND " . implode(' AND ', $cond) . $active . " ORDER BY p.quantity > 0 DESC, (p.image <> '') DESC LIMIT " . (8 - count($ids)))->rows as $r) {
+					$ids[(int)$r['product_id']] = true;
+				}
+			}
+		}
+
+		$ids = array_slice(array_keys($ids), 0, 8);
+
+		if ($ids) {
+			$this->load->model('tool/image');
+			$cards = $this->enrichProducts($this->cards($ids));
+
+			foreach ($cards as $c) {
+				$img = $this->db->query("SELECT image FROM `{$p}product` WHERE product_id = '" . (int)$c['product_id'] . "'")->row;
+				$out['items'][] = array(
+					'name'  => html_entity_decode($c['name'], ENT_QUOTES, 'UTF-8'),
+					'code'  => isset($c['vm_model']) ? $c['vm_model'] : '',
+					'price' => $c['special'] ? $c['special'] : $c['price'],
+					'stock' => isset($c['vm_stock']) ? $c['vm_stock'] : '',
+					'cls'   => isset($c['vm_stock_class']) ? $c['vm_stock_class'] : '',
+					'why'   => isset($why[(int)$c['product_id']]) ? $why[(int)$c['product_id']] : '',
+					'img'   => $this->model_tool_image->resize(!empty($img['image']) ? $img['image'] : 'placeholder.png', 60, 60),
+					'href'  => html_entity_decode($c['href'], ENT_QUOTES, 'UTF-8'),
+					'id'    => (int)$c['product_id'],
+					'min'   => isset($c['minimum']) ? (int)$c['minimum'] : 1
+				);
+			}
+		}
+
+		$out['all'] = html_entity_decode($this->url->link('product/search', 'search=' . urlencode($q)), ENT_QUOTES, 'UTF-8');
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($out, JSON_UNESCAPED_UNICODE));
 	}
 
 	// =============================================================== category filters (1.5.0)

@@ -182,3 +182,5 @@ $_['text_f_search'] = 'Search';
 $_['text_f_show'] = 'Show products';
 $_['text_f_car'] = 'Only for my car';
 $_['text_f_found'] = 'Found: %s';
+$_['text_s_all'] = 'All results for "%s"';
+$_['text_s_none'] = 'Nothing found. Try the part number without spaces.';
