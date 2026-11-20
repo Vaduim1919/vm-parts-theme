@@ -165,6 +165,13 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		$data['markup_brands'] = $brand_rules;
 		$data['markup_save_url'] = $this->ajaxUrl('markupSave');
 		$data['yml_chunk_url'] = $this->ajaxUrl('ymlChunk');
+		$data['bms_groups_url'] = $this->ajaxUrl('bmsGroups');
+		$data['bms_save_url'] = $this->ajaxUrl('bmsSave');
+		$data['bms_run_url'] = $this->ajaxUrl('bmsRun');
+		$data['bms_groups'] = json_decode((string)$this->config->get('module_vm_catalog_bm_groups'), true) ?: array();
+		$data['bms_local'] = (string)$this->config->get('module_vm_catalog_bm_local');
+		$data['bms_days'] = (int)($this->config->get('module_vm_catalog_bm_days') ?: 2);
+		$data['bms_only'] = $this->config->get('module_vm_catalog_bm_only') === null || (string)$this->config->get('module_vm_catalog_bm_only') === '1';
 		$data['yml_start_url'] = $this->ajaxUrl('ymlStart');
 		$data['yml_step_url'] = $this->ajaxUrl('ymlStep');
 		$data['yml_photos_url'] = $this->ajaxUrl('ymlPhotos');
@@ -218,7 +225,11 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			'module_vm_catalog_cron_key'   => $this->cronKey(),
 			'module_vm_catalog_admin_dir'  => DIR_APPLICATION,
 			'module_vm_catalog_bm_img_pattern' => (string)$this->config->get('module_vm_catalog_bm_img_pattern'),
-			'module_vm_catalog_yml_photos' => (string)($this->config->get('module_vm_catalog_yml_photos') ?: 1)
+			'module_vm_catalog_yml_photos' => (string)($this->config->get('module_vm_catalog_yml_photos') ?: 1),
+			'module_vm_catalog_bm_groups'  => (string)$this->config->get('module_vm_catalog_bm_groups'),
+			'module_vm_catalog_bm_local'   => (string)$this->config->get('module_vm_catalog_bm_local'),
+			'module_vm_catalog_bm_days'    => (string)($this->config->get('module_vm_catalog_bm_days') ?: 2),
+			'module_vm_catalog_bm_only'    => (string)($this->config->get('module_vm_catalog_bm_only') === null ? '1' : $this->config->get('module_vm_catalog_bm_only'))
 		);
 	}
 
@@ -510,6 +521,73 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		$y = $this->model_extension_module_vm_catalog->yml();
 		$run = $y->runPhotos(20);
 		$this->json(array('run' => $run, 'stats' => $y->photoStats()));
+	}
+
+	// ---------------------------------------------------------------- BM Parts as a supplier
+
+	private function setValue($key, $value) {
+		$this->db->query("DELETE FROM `" . DB_PREFIX . "setting` WHERE store_id = 0 AND `code` = 'module_vm_catalog' AND `key` = '" . $this->db->escape($key) . "'");
+		$this->db->query("INSERT INTO `" . DB_PREFIX . "setting` SET store_id = 0, `code` = 'module_vm_catalog', `key` = '" . $this->db->escape($key) . "', `value` = '" . $this->db->escape($value) . "', serialized = 0");
+		$this->config->set($key, $value);
+	}
+
+	public function bmsGroups() {
+		$this->load->model($this->route);
+		$m = $this->model_extension_module_vm_catalog;
+		$tree = $m->bmGroups(!empty($this->request->get['refresh']));
+		$wh = isset($tree['error']) ? array() : $m->bmWarehouses();
+		$this->json(array('tree' => $tree, 'warehouses' => isset($wh['error']) ? array() : $wh, 'wh_error' => isset($wh['error']) ? $wh['error'] : ''));
+	}
+
+	public function bmsSave() {
+		$this->load->language($this->route);
+
+		if ($this->request->server['REQUEST_METHOD'] !== 'POST' || !$this->canModify()) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$post = $this->request->post;
+		$groups = json_decode(html_entity_decode(isset($post['groups']) ? $post['groups'] : '[]', ENT_QUOTES, 'UTF-8'), true);
+		$groups = is_array($groups) ? array_values(array_filter(array_map('strval', $groups), 'strlen')) : array();
+		$this->setValue('module_vm_catalog_bm_groups', json_encode($groups, JSON_UNESCAPED_UNICODE));
+		$this->setValue('module_vm_catalog_bm_local', mb_substr(html_entity_decode(isset($post['local']) ? trim($post['local']) : '', ENT_QUOTES, 'UTF-8'), 0, 64));
+		$this->setValue('module_vm_catalog_bm_days', (string)max(1, min(60, isset($post['days']) ? (int)$post['days'] : 2)));
+		$this->setValue('module_vm_catalog_bm_only', !empty($post['only']) ? '1' : '0');
+		$this->json(array('saved' => count($groups)));
+	}
+
+	public function bmsRun() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify() || !$this->user->hasPermission('modify', 'catalog/product')) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$m = $this->model_extension_module_vm_catalog;
+		$step = isset($this->request->get['step']) ? $this->request->get['step'] : 'fetch';
+
+		if ($step === 'start') {
+			$groups = json_decode((string)$this->config->get('module_vm_catalog_bm_groups'), true);
+
+			return $this->json($m->bmFetchStart(is_array($groups) ? $groups : array(), (string)$this->config->get('module_vm_catalog_bm_only') !== '0'));
+		}
+
+		if ($step === 'fetch') {
+			return $this->json($m->bmFetchStep(20));
+		}
+
+		$s = $this->settings();
+		$job = $m->bmImportStart(array(
+			'supplier' => 'bm',
+			'local'    => (string)$this->config->get('module_vm_catalog_bm_local'),
+			'days'     => (int)($this->config->get('module_vm_catalog_bm_days') ?: 2),
+			'markup'   => $s['module_vm_catalog_markup'],
+			'round'    => $s['module_vm_catalog_round'],
+			'file'     => 'BM Parts API'
+		));
+
+		$this->json(isset($job['error']) ? $job : array('status' => 'started', 'total' => $job['total']));
 	}
 
 	public function markupSave() {

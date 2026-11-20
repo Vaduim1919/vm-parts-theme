@@ -1070,6 +1070,11 @@ class ModelExtensionModuleVmCatalog extends Model {
 			$job['stats'][$local ? 'local' : 'remote']++;
 
 			$this->db->query("REPLACE INTO `" . DB_PREFIX . "vm_catalog_item` SET supplier = '" . $this->db->escape($supplier) . "', art_key = '" . $this->db->escape($ak) . "', brand_key = '" . $this->db->escape($bk) . "', article = '" . $this->db->escape(mb_substr($article, 0, 64)) . "', brand = '" . $this->db->escape(mb_substr($brand, 0, 64)) . "', product_id = '" . $product_id . "', price_in = '" . (float)$price . "', local_qty = '" . (int)$local . "', remote_qty = '" . (int)$remote . "', stock = '" . $this->db->escape(json_encode($stock, JSON_UNESCAPED_UNICODE)) . "', date_seen = '" . $this->db->escape($now) . "'");
+
+			// the same product from several suppliers: stock and price from all of them
+			if ((int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "vm_catalog_item` WHERE product_id = '" . (int)$product_id . "'")->row['n'] > 1) {
+				$this->resyncProduct($product_id, $opt['markup'], (int)$opt['round'], $wait_status);
+			}
 		}
 
 		$job['offset'] = ftell($fh);
@@ -1083,6 +1088,40 @@ class ModelExtensionModuleVmCatalog extends Model {
 		$this->saveJob($job);
 
 		return $job;
+	}
+
+	// product price/stock from every supplier that carries it: own-warehouse stock wins, then the cheapest
+	public function resyncProduct($product_id, $default_markup, $round, $wait_status = 0) {
+		$p = DB_PREFIX;
+		$local = 0;
+		$best = null;
+		$any = false;
+
+		foreach ($this->db->query("SELECT supplier, brand_key, price_in, local_qty, remote_qty FROM `{$p}vm_catalog_item` WHERE product_id = '" . (int)$product_id . "' AND price_in > 0")->rows as $r) {
+			$lq = (int)$r['local_qty'];
+			$has = $lq > 0 ? 2 : ((int)$r['remote_qty'] > 0 ? 1 : 0);
+
+			if (!$has) {
+				continue;
+			}
+
+			$any = true;
+			$local += $lq;
+			$sell = round((float)$r['price_in'] * (1 + $this->markupFor($r['supplier'], $r['brand_key'], $default_markup) / 100), $round);
+
+			if ($best === null || $has > $best[1] || ($has == $best[1] && $sell < $best[0])) {
+				$best = array($sell, $has);
+			}
+		}
+
+		if (!$any) {
+			return false;
+		}
+
+		$status_id = $local > 0 ? (int)$this->config->get('config_stock_status_id') : ($wait_status ? (int)$wait_status : (int)$this->config->get('config_stock_status_id'));
+		$this->db->query("UPDATE `{$p}product` SET price = '" . (float)$best[0] . "', quantity = '" . (int)$local . "', stock_status_id = '" . $status_id . "', status = 1, date_modified = NOW() WHERE product_id = '" . (int)$product_id . "'");
+
+		return true;
 	}
 
 	// products of this supplier that are no longer in the price list: hide
@@ -1104,11 +1143,16 @@ class ModelExtensionModuleVmCatalog extends Model {
 
 		$old = $this->db->query("SELECT product_id FROM `" . DB_PREFIX . "vm_catalog_item` WHERE supplier = '" . $supplier . "' AND date_seen < '" . $this->db->escape($job['started']) . "' AND (local_qty > 0 OR remote_qty > 0)");
 
+		$this->db->query("UPDATE `" . DB_PREFIX . "vm_catalog_item` SET local_qty = 0, remote_qty = 0 WHERE supplier = '" . $supplier . "' AND date_seen < '" . $this->db->escape($job['started']) . "'");
+
 		foreach ($old->rows as $r) {
+			// still carried by another supplier: keep it on sale with their stock and price
+			if ($this->resyncProduct((int)$r['product_id'], $job['opt']['markup'], (int)$job['opt']['round'], $this->stockStatusId($job['opt']['days']))) {
+				continue;
+			}
+
 			$this->db->query("UPDATE `" . DB_PREFIX . "product` SET quantity = 0, status = 0, date_modified = NOW() WHERE product_id = '" . (int)$r['product_id'] . "'");
 		}
-
-		$this->db->query("UPDATE `" . DB_PREFIX . "vm_catalog_item` SET local_qty = 0, remote_qty = 0 WHERE supplier = '" . $supplier . "' AND date_seen < '" . $this->db->escape($job['started']) . "'");
 
 		$job['stats']['hidden'] = $old->num_rows;
 
@@ -1357,6 +1401,361 @@ class ModelExtensionModuleVmCatalog extends Model {
 		return array('file' => $file);
 	}
 
+
+	// ------------------------------------------------------------ BM Parts as a supplier: selected groups only (1.7.0)
+
+	private function bmState($set = null) {
+		$f = $this->workDir() . 'bm_fetch.json';
+
+		if ($set === null) {
+			$j = is_file($f) ? json_decode(file_get_contents($f), true) : null;
+
+			return is_array($j) ? $j : null;
+		}
+
+		file_put_contents($f, json_encode($set, JSON_UNESCAPED_UNICODE));
+
+		return $set;
+	}
+
+	public function bmGroups($refresh = false) {
+		$f = $this->workDir() . 'bm_groups.json';
+
+		if (!$refresh && is_file($f) && filemtime($f) > time() - 86400) {
+			$j = json_decode(file_get_contents($f), true);
+
+			if (is_array($j)) {
+				return $j;
+			}
+		}
+
+		$r = $this->bm('GET', 'search/products/groups');
+
+		if ($r['code'] != 200 || !isset($r['json']['groups']) || !is_array($r['json']['groups'])) {
+			return array('error' => isset($r['error']) ? $r['error'] : 'BM Parts не віддав дерево груп (код ' . $r['code'] . ')');
+		}
+
+		$clean = function ($list) use (&$clean) {
+			$out = array();
+
+			foreach ((array)$list as $g) {
+				if (!is_array($g) || empty($g['path'])) {
+					continue;
+				}
+
+				$out[] = array('name' => isset($g['name']) ? (string)$g['name'] : (string)$g['path'], 'path' => (string)$g['path'], 'n' => isset($g['products_count']) ? (int)$g['products_count'] : 0, 'children' => !empty($g['children']) ? $clean($g['children']) : array());
+			}
+
+			return $out;
+		};
+
+		$tree = array('groups' => $clean($r['json']['groups']), 'date' => date('Y-m-d H:i'));
+		file_put_contents($f, json_encode($tree, JSON_UNESCAPED_UNICODE));
+
+		return $tree;
+	}
+
+	public function bmWarehouses() {
+		$r = $this->bm('GET', 'company/warehouses');
+		$out = array();
+
+		if ($r['code'] == 200 && is_array($r['json'])) {
+			$list = isset($r['json']['warehouses']) ? $r['json']['warehouses'] : $r['json'];
+
+			foreach ((array)$list as $k => $w) {
+				if (is_array($w)) {
+					$uuid = isset($w['uuid']) ? $w['uuid'] : (isset($w['id']) ? $w['id'] : (is_string($k) ? $k : ''));
+					$name = isset($w['name']) ? $w['name'] : (isset($w['title']) ? $w['title'] : (isset($w['short_name']) ? $w['short_name'] : $uuid));
+
+					if ($uuid !== '' || $name !== '') {
+						$out[] = array('uuid' => (string)$uuid, 'name' => trim((string)$name));
+					}
+				}
+			}
+		}
+
+		return $out ? $out : array('error' => isset($r['error']) ? $r['error'] : 'Не вдалося отримати склади BM (код ' . $r['code'] . ')');
+	}
+
+	// stock per warehouse name from one product of the group listing; shapes differ, read the usual ones
+	private function bmStock($p, $wh) {
+		$out = array();
+		$name = function ($v, $k) use ($wh) {
+			foreach (array('warehouse_name', 'name', 'title', 'short_name') as $f) {
+				if (isset($v[$f]) && is_scalar($v[$f]) && $v[$f] !== '') {
+					return (string)$v[$f];
+				}
+			}
+
+			if (isset($v['warehouse']) && is_array($v['warehouse'])) {
+				foreach (array('name', 'title') as $f) {
+					if (!empty($v['warehouse'][$f])) {
+						return (string)$v['warehouse'][$f];
+					}
+				}
+			}
+
+			foreach (array('warehouse_uuid', 'uuid', 'id', 'warehouse') as $f) {
+				if (isset($v[$f]) && is_scalar($v[$f]) && isset($wh[$v[$f]])) {
+					return $wh[$v[$f]];
+				}
+			}
+
+			return is_string($k) ? (isset($wh[$k]) ? $wh[$k] : $k) : '';
+		};
+
+		foreach (array('in_stocks', 'stocks', 'warehouses', 'remains') as $key) {
+			if (empty($p[$key]) || !is_array($p[$key])) {
+				continue;
+			}
+
+			foreach ($p[$key] as $k => $v) {
+				if (is_array($v)) {
+					$n = $name($v, $k);
+					$q = '';
+
+					foreach (array('quantity', 'qty', 'count', 'amount', 'value', 'in_stock', 'stock') as $f) {
+						if (isset($v[$f]) && is_scalar($v[$f])) {
+							$q = $v[$f];
+							break;
+						}
+					}
+				} else {
+					$n = is_string($k) ? (isset($wh[$k]) ? $wh[$k] : $k) : '';
+					$q = $v;
+				}
+
+				$q = $this->qty($q);
+
+				if ($n !== '' && $q > 0) {
+					$n = mb_substr(trim(str_replace("\t", ' ', $n)), 0, 64);
+					$out[$n] = (isset($out[$n]) ? $out[$n] : 0) + $q;
+				}
+			}
+
+			if ($out) {
+				return $out;
+			}
+		}
+
+		// no per-warehouse data: total as "other warehouses"
+		foreach (array('quantity', 'in_others', 'available') as $f) {
+			if (isset($p[$f]) && !is_array($p[$f]) && $this->qty($p[$f]) > 0 && $p[$f] !== false) {
+				return array('BM' => $this->qty($p[$f] === true ? 1 : $p[$f]));
+			}
+		}
+
+		return $out;
+	}
+
+	private static function bmPrice($p) {
+		foreach (array('price', 'price_uah', 'client_price', 'your_price') as $f) {
+			if (isset($p[$f]) && is_scalar($p[$f]) && (float)str_replace(',', '.', $p[$f]) > 0) {
+				return (float)str_replace(array(',', ' '), array('.', ''), $p[$f]);
+			}
+		}
+
+		if (!empty($p['prices']) && is_array($p['prices'])) {
+			foreach ($p['prices'] as $v) {
+				$x = is_array($v) ? (isset($v['price']) ? $v['price'] : (isset($v['value']) ? $v['value'] : 0)) : $v;
+
+				if ((float)$x > 0) {
+					return (float)$x;
+				}
+			}
+		}
+
+		return 0;
+	}
+
+	public function bmFetchStart($groups, $only_stock) {
+		$groups = array_values(array_filter(array_map('strval', (array)$groups), 'strlen'));
+
+		if (!$groups) {
+			return array('error' => 'Не вибрано жодної групи');
+		}
+
+		// a parent and its child both ticked: keep the parent only
+		sort($groups);
+		$keep = array();
+
+		foreach ($groups as $g) {
+			$covered = false;
+
+			foreach ($keep as $k) {
+				if (strpos($g, $k . '/') === 0) {
+					$covered = true;
+					break;
+				}
+			}
+
+			if (!$covered) {
+				$keep[] = $g;
+			}
+		}
+
+		$wh = array();
+		$list = $this->bmWarehouses();
+
+		if (!isset($list['error'])) {
+			foreach ($list as $w) {
+				$wh[$w['uuid']] = $w['name'];
+			}
+		}
+
+		@unlink($this->workDir() . 'bm_rows.jsonl');
+
+		return $this->bmState(array('groups' => $keep, 'gi' => 0, 'page' => 1, 'pages' => 0, 'rows' => 0, 'requests' => 0, 'only' => $only_stock ? 1 : 0, 'wh' => $wh, 'cols' => array(), 'done' => false, 'started' => date('Y-m-d H:i:s'), 'sample' => ''));
+	}
+
+	public function bmFetchStep($seconds = 20) {
+		$st = $this->bmState();
+
+		if (!$st) {
+			return array('error' => 'Спершу запустіть оновлення');
+		}
+
+		if ($st['done']) {
+			return $st;
+		}
+
+		@set_time_limit($seconds + 90);
+		$start = microtime(true);
+		$fh = fopen($this->workDir() . 'bm_rows.jsonl', 'a');
+
+		while (microtime(true) - $start < $seconds && $st['gi'] < count($st['groups'])) {
+			$path = implode('/', array_map('rawurlencode', explode('/', $st['groups'][$st['gi']])));
+			$q = array('page' => $st['page'], 'per_page' => 100, 'products_as' => 'obj', 'warehouses' => 'all');
+
+			if ($st['only']) {
+				$q['available'] = 'true';
+			}
+
+			$r = $this->bm('GET', 'search/products/groups/' . $path, $q);
+			$st['requests']++;
+
+			if ($r['code'] == 429) {
+				$st['wait'] = 'Ліміт запитів BM — продовжу за хвилину';
+				break;
+			}
+
+			if ($r['code'] != 200 || !is_array($r['json'])) {
+				fclose($fh);
+				$this->bmState($st);
+
+				return array('error' => 'BM Parts: група «' . $st['groups'][$st['gi']] . '», сторінка ' . $st['page'] . ' — код ' . $r['code'] . (isset($r['error']) ? ' ' . $r['error'] : ''));
+			}
+
+			$products = isset($r['json']['products']) ? $r['json']['products'] : array();
+
+			if ($st['sample'] === '' && $products) {
+				$first = reset($products);
+				$st['sample'] = mb_substr(json_encode($first, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 0, 3000);
+			}
+
+			foreach ((array)$products as $k => $p) {
+				if (!is_array($p)) {
+					continue;
+				}
+
+				$article = isset($p['article']) ? trim((string)$p['article']) : '';
+				$brand = isset($p['brand']) ? (is_array($p['brand']) ? (string)(isset($p['brand']['name']) ? $p['brand']['name'] : '') : trim((string)$p['brand'])) : '';
+				$name = isset($p['name']) ? trim((string)$p['name']) : '';
+				$price = self::bmPrice($p);
+				$stock = $this->bmStock($p, $st['wh']);
+
+				if ($article === '' || $name === '' || $price <= 0 || !$stock) {
+					continue;
+				}
+
+				foreach (array_keys($stock) as $w) {
+					$st['cols'][$w] = true;
+				}
+
+				fwrite($fh, json_encode(array($article, $name, $brand, $price, $stock), JSON_UNESCAPED_UNICODE) . "\n");
+				$st['rows']++;
+			}
+
+			$pages = 0;
+
+			foreach (array('pages', 'total_pages', 'last_page') as $f) {
+				if (isset($r['json'][$f])) {
+					$pages = (int)$r['json'][$f];
+				}
+			}
+
+			if (!$pages && isset($r['json']['total'])) {
+				$pages = (int)ceil((int)$r['json']['total'] / 100);
+			}
+
+			$st['pages'] = $pages;
+
+			if (!$products || ($pages && $st['page'] >= $pages) || count($products) < 100) {
+				$st['gi']++;
+				$st['page'] = 1;
+				$st['pages'] = 0;
+			} else {
+				$st['page']++;
+			}
+		}
+
+		fclose($fh);
+
+		if ($st['gi'] >= count($st['groups'])) {
+			$st['done'] = true;
+		}
+
+		return $this->bmState($st);
+	}
+
+	// rows collected -> TSV in the price-list shape -> the usual import job
+	public function bmImportStart($opt) {
+		$st = $this->bmState();
+
+		if (!$st || !$st['done']) {
+			return array('error' => 'Завантаження з BM ще не завершене');
+		}
+
+		if (!$st['rows']) {
+			return array('error' => 'У вибраних групах не знайдено товарів у наявності з ціною');
+		}
+
+		$cols = array_keys($st['cols']);
+		$tsv = $this->workDir() . 'current.tsv';
+		$out = fopen($tsv, 'w');
+		fwrite($out, implode("\t", array_merge(array('Артикул', 'Найменування', 'Бренд', 'Ціна'), $cols)) . "\n");
+		$in = fopen($this->workDir() . 'bm_rows.jsonl', 'r');
+		$seen = array();
+
+		while (($line = fgets($in)) !== false) {
+			$r = json_decode($line, true);
+
+			if (!is_array($r)) {
+				continue;
+			}
+
+			$key = $this->key($r[0]) . '|' . $this->key($r[2]);
+
+			if (isset($seen[$key])) {
+				continue; // the same product in two ticked groups
+			}
+
+			$seen[$key] = true;
+			$row = array(str_replace("\t", ' ', $r[0]), str_replace(array("\t", "\n", "\r"), ' ', $r[1]), str_replace("\t", ' ', $r[2]), $r[3]);
+
+			foreach ($cols as $c) {
+				$row[] = isset($r[4][$c]) ? (int)$r[4][$c] : '';
+			}
+
+			fwrite($out, implode("\t", $row) . "\n");
+		}
+
+		fclose($in);
+		fclose($out);
+		@unlink($this->workDir() . 'bm_rows.jsonl');
+
+		return $this->startJob($tsv, $opt);
+	}
 
 	// ------------------------------------------------------------ BM Parts API
 

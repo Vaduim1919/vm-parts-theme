@@ -121,6 +121,35 @@
       </div>
     </div>
 
+    <!-- BM Parts as a supplier -->
+    <div class="panel panel-default" id="vm-bms">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-truck"></i> {{ text_bms_title }}</h3></div>
+      <div class="panel-body">
+        <p>{{ text_bms_help }}</p>
+        <div class="row">
+          <div class="col-md-7">
+            <div class="input-group input-group-sm" style="margin-bottom:8px">
+              <input type="text" id="vm-bms-find" class="form-control" placeholder="{{ text_bms_find }}">
+              <span class="input-group-btn"><button type="button" id="vm-bms-load" class="btn btn-default"><i class="fa fa-refresh"></i> {{ text_bms_load }}</button></span>
+            </div>
+            <div id="vm-bms-tree" style="max-height:420px;overflow:auto;border:1px solid #e3e6ea;border-radius:4px;padding:8px;background:#fcfcfd"><span class="text-muted">{{ text_bms_tree_hint }}</span></div>
+            <p class="help-block" id="vm-bms-sel"></p>
+          </div>
+          <div class="col-md-5">
+            <div class="form-group"><label>{{ text_bms_local }}</label><select id="vm-bms-local" class="form-control"><option value="">{{ text_bms_local_none }}</option>{% if bms_local %}<option value="{{ bms_local }}" selected>{{ bms_local }}</option>{% endif %}</select><p class="help-block">{{ text_bms_local_help }}</p></div>
+            <div class="form-group"><label>{{ text_bms_days }}</label><input type="number" min="1" max="60" id="vm-bms-days" class="form-control" value="{{ bms_days }}" style="max-width:120px"></div>
+            <div class="checkbox"><label><input type="checkbox" id="vm-bms-only"{% if bms_only %} checked{% endif %}> {{ text_bms_only }}</label></div>
+            <p class="help-block">{{ text_bms_markup }}</p>
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary" id="vm-bms-save"><i class="fa fa-save"></i> {{ text_bms_save }}</button>
+        <button type="button" class="btn btn-success" id="vm-bms-run"><i class="fa fa-cloud-download"></i> {{ text_bms_run }}</button>
+        <div id="vm-bms-status" style="margin-top:12px;max-width:820px"></div>
+        <div class="progress" id="vm-bms-bar" style="display:none;max-width:820px"><div class="progress-bar progress-bar-striped active" style="width:0%"></div></div>
+        <details id="vm-bms-sample" style="display:none;max-width:820px"><summary>{{ text_bms_sample }}</summary><pre style="max-height:300px;overflow:auto;font-size:11px"></pre></details>
+      </div>
+    </div>
+
     <!-- UTR YML: photos & characteristics -->
     <div class="panel panel-default" id="vm-yml">
       <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-picture-o"></i> {{ text_yml_title }}</h3></div>
@@ -482,6 +511,85 @@
           go();
         }).fail(function () { setTimeout(go, 4000); });
       })();
+    });
+  })();
+
+  // ---------- BM Parts as a supplier
+  (function () {
+    var saved = {{ bms_groups|json_encode|raw }}, curLocal = {{ bms_local|json_encode|raw }}, tree = $('#vm-bms-tree');
+    function esc(t) { return $('<div>').text(t).html(); }
+    function node(g) {
+      var kids = g.children && g.children.length, h = '<li data-path="' + esc(g.path) + '" data-name="' + esc(g.name.toLowerCase()) + '">';
+      h += (kids ? '<a href="#" class="vm-bms-tg" style="display:inline-block;width:16px;color:#888"><i class="fa fa-caret-right"></i></a>' : '<span style="display:inline-block;width:16px"></span>');
+      h += '<label style="font-weight:normal;margin:0"><input type="checkbox" value="' + esc(g.path) + '"' + (saved.indexOf(g.path) > -1 ? ' checked' : '') + '> ' + esc(g.name) + ' <span class="text-muted">(' + g.n + ')</span></label>';
+      if (kids) { h += '<ul style="list-style:none;padding-left:20px;display:none">' + g.children.map(node).join('') + '</ul>'; }
+      return h + '</li>';
+    }
+    function count() {
+      var c = tree.find('input:checked').filter(function () { return !$(this).closest('ul').closest('li').find('> label input').is(':checked'); });
+      var n = 0; c.each(function () { var m = $(this).parent().find('.text-muted').text().match(/\d+/); n += m ? +m[0] : 0; });
+      $('#vm-bms-sel').text('{{ text_bms_selected|e('js') }}'.replace('%s', c.length).replace('%s', n));
+    }
+    function load(refresh) {
+      tree.html('<span class="text-muted">{{ text_bms_loading|e('js') }}</span>');
+      $.getJSON('{{ bms_groups_url|e('js') }}', { refresh: refresh ? 1 : 0 }, function (j) {
+        if (j.tree && j.tree.error) { tree.html('<span class="text-danger">' + esc(j.tree.error) + '</span>'); return; }
+        tree.html('<ul style="list-style:none;padding-left:0;margin:0">' + j.tree.groups.map(node).join('') + '</ul>');
+        tree.find('input:checked').each(function () { $(this).parents('ul').show(); $(this).parents('li').find('> .vm-bms-tg i').attr('class', 'fa fa-caret-down'); });
+        var sel = $('#vm-bms-local').empty().append('<option value="">{{ text_bms_local_none|e('js') }}</option>');
+        (j.warehouses || []).forEach(function (w) { sel.append($('<option>').val(w.name).text(w.name).prop('selected', w.name === curLocal)); });
+        if (curLocal && !sel.find('option:selected').length) sel.append($('<option>').val(curLocal).text(curLocal).prop('selected', true));
+        count();
+      });
+    }
+    tree.on('click', '.vm-bms-tg', function (e) { e.preventDefault(); var ul = $(this).siblings('ul').toggle(); $(this).find('i').attr('class', ul.is(':visible') ? 'fa fa-caret-down' : 'fa fa-caret-right'); });
+    tree.on('change', 'input', function () { $(this).closest('li').find('ul input').prop('checked', false).prop('disabled', this.checked); count(); });
+    $('#vm-bms-find').on('input', function () {
+      var v = $.trim(this.value.toLowerCase());
+      tree.find('li').each(function () { var li = $(this), hit = !v || li.attr('data-name').indexOf(v) > -1 || li.find('li[data-name*="' + v.replace(/"/g, '') + '"]').length; li.toggle(!!hit); if (v && hit) li.parents('ul').show(); });
+    });
+    $('#vm-bms-load').on('click', function () { load(true); });
+    load(false);
+    function picked() { return tree.find('input:checked:not(:disabled)').map(function () { return this.value; }).get(); }
+    function msg(cls, t) { $('#vm-bms-status').html('<div class="alert alert-' + cls + '">' + t + '</div>'); }
+    function save(cb) {
+      $.post('{{ bms_save_url|e('js') }}', { groups: JSON.stringify(picked()), local: $('#vm-bms-local').val(), days: $('#vm-bms-days').val(), only: $('#vm-bms-only').is(':checked') ? 1 : 0 }, null, 'json').done(function (j) {
+        if (j.error) { msg('danger', j.error); return; }
+        saved = picked(); curLocal = $('#vm-bms-local').val();
+        msg('success', '{{ text_bms_saved|e('js') }}'.replace('%s', j.saved)); if (cb) cb();
+      }).fail(function (x) { msg('danger', esc((x.responseText || '').substr(0, 300))); });
+    }
+    $('#vm-bms-save').on('click', function () { save(); });
+    $('#vm-bms-run').on('click', function () {
+      if (!picked().length) { msg('warning', '{{ text_bms_none|e('js') }}'); return; }
+      var btn = $(this).prop('disabled', true), bar = $('#vm-bms-bar').show().find('.progress-bar').css('width', '3%');
+      function done(t, cls) { msg(cls || 'danger', t); btn.prop('disabled', false); setTimeout(function () { $('#vm-bms-bar').hide(); }, 1500); }
+      save(function () {
+        $.getJSON('{{ bms_run_url|e('js') }}', { step: 'start' }).done(function (j) {
+          if (j.error) return done(j.error);
+          (function fetch() {
+            $.ajax({ url: '{{ bms_run_url|e('js') }}', data: { step: 'fetch' }, dataType: 'json', timeout: 180000 }).done(function (s) {
+              if (s.error) return done(esc(s.error));
+              if (s.sample) { $('#vm-bms-sample').show().find('pre').text(s.sample); }
+              bar.css('width', Math.max(3, Math.round(60 * s.gi / s.groups.length)) + '%');
+              if (!s.done) { msg('info', '{{ text_bms_fetch|e('js') }}'.replace('%s', s.gi + 1 > s.groups.length ? s.groups.length : s.gi + 1).replace('%s', s.groups.length).replace('%s', s.rows).replace('%s', s.requests) + (s.wait ? ' ' + s.wait : '')); return setTimeout(fetch, s.wait ? 60000 : 50); }
+              msg('info', '{{ text_bms_importing|e('js') }}'.replace('%s', s.rows));
+              $.getJSON('{{ bms_run_url|e('js') }}', { step: 'import' }).done(function (st) {
+                if (st.error) return done(esc(st.error));
+                (function stepImp() {
+                  $.ajax({ url: '{{ step_url|e('js') }}', dataType: 'json', timeout: 180000 }).done(function (k) {
+                    if (k.error) return done(esc(k.error));
+                    bar.css('width', (60 + Math.round(40 * k.done / Math.max(1, k.total))) + '%');
+                    if (!k.finished) { msg('info', '{{ text_bms_step|e('js') }}'.replace('%s', k.done).replace('%s', k.total)); return stepImp(); }
+                    bar.css('width', '100%');
+                    done('{{ text_bms_done|e('js') }}'.replace('%s', k.stats.created).replace('%s', k.stats.updated).replace('%s', k.stats.local).replace('%s', k.stats.remote).replace('%s', k.stats.hidden || 0), 'success');
+                  }).fail(function () { setTimeout(stepImp, 4000); });
+                })();
+              }).fail(function (x) { done(esc((x.responseText || '').substr(0, 300))); });
+            }).fail(function () { setTimeout(fetch, 5000); });
+          })();
+        }).fail(function (x) { done(esc((x.responseText || '').substr(0, 300))); });
+      });
     });
   })();
 })(jQuery);
