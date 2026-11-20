@@ -164,6 +164,14 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		$data['markup_suppliers'] = array_values($suppliers);
 		$data['markup_brands'] = $brand_rules;
 		$data['markup_save_url'] = $this->ajaxUrl('markupSave');
+		$data['yml_chunk_url'] = $this->ajaxUrl('ymlChunk');
+		$data['yml_start_url'] = $this->ajaxUrl('ymlStart');
+		$data['yml_step_url'] = $this->ajaxUrl('ymlStep');
+		$data['yml_photos_url'] = $this->ajaxUrl('ymlPhotos');
+		$data['yml_job'] = $this->model_extension_module_vm_catalog->yml()->getJob();
+		$data['yml_photo'] = $this->model_extension_module_vm_catalog->yml()->photoStats();
+		$data['yml_photos_max'] = max(1, min(6, (int)($this->config->get('module_vm_catalog_yml_photos') ?: 1)));
+		$data['post_max'] = ini_get('post_max_size');
 		$data['markup_brands_url'] = $this->ajaxUrl('markupBrands');
 		$data['markup_recalc_url'] = $this->ajaxUrl('markupRecalc');
 		$data['checkout_action'] = $this->link('stockCheckout');
@@ -209,7 +217,8 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			'module_vm_catalog_photos_v2'  => 1,
 			'module_vm_catalog_cron_key'   => $this->cronKey(),
 			'module_vm_catalog_admin_dir'  => DIR_APPLICATION,
-			'module_vm_catalog_bm_img_pattern' => (string)$this->config->get('module_vm_catalog_bm_img_pattern')
+			'module_vm_catalog_bm_img_pattern' => (string)$this->config->get('module_vm_catalog_bm_img_pattern'),
+			'module_vm_catalog_yml_photos' => (string)($this->config->get('module_vm_catalog_yml_photos') ?: 1)
 		);
 	}
 
@@ -441,6 +450,65 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		}
 
 		$this->response->redirect($this->link());
+	}
+
+	// ---------------------------------------------------------------- UTR YML (photos, characteristics)
+
+	public function ymlChunk() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if ($this->request->server['REQUEST_METHOD'] !== 'POST' || !$this->canModify()) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		if (empty($this->request->files['chunk']['tmp_name']) || !is_uploaded_file($this->request->files['chunk']['tmp_name'])) {
+			return $this->json(array('error' => 'Частина файлу не дійшла (ліміт post_max_size = ' . ini_get('post_max_size') . ')'));
+		}
+
+		$index = isset($this->request->post['index']) ? (int)$this->request->post['index'] : 0;
+		$this->json($this->model_extension_module_vm_catalog->yml()->chunk($index, file_get_contents($this->request->files['chunk']['tmp_name'])));
+	}
+
+	public function ymlStart() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify()) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		if (isset($this->request->post['photos'])) {
+			$this->load->model('setting/setting');
+			$this->model_setting_setting->editSettingValue('module_vm_catalog', 'module_vm_catalog_yml_photos', (string)max(1, min(6, (int)$this->request->post['photos'])));
+			$this->config->set('module_vm_catalog_yml_photos', (string)max(1, min(6, (int)$this->request->post['photos'])));
+		}
+
+		$this->json($this->model_extension_module_vm_catalog->yml()->start());
+	}
+
+	public function ymlStep() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify() || !$this->user->hasPermission('modify', 'catalog/product')) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$this->json($this->model_extension_module_vm_catalog->yml()->step(20));
+	}
+
+	public function ymlPhotos() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify()) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$y = $this->model_extension_module_vm_catalog->yml();
+		$run = $y->runPhotos(20);
+		$this->json(array('run' => $run, 'stats' => $y->photoStats()));
 	}
 
 	public function markupSave() {

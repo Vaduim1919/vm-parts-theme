@@ -121,6 +121,30 @@
       </div>
     </div>
 
+    <!-- UTR YML: photos & characteristics -->
+    <div class="panel panel-default" id="vm-yml">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-picture-o"></i> {{ text_yml_title }}</h3></div>
+      <div class="panel-body">
+        <p>{{ text_yml_help }}</p>
+        <div class="form-inline" style="margin-bottom:10px">
+          <input type="file" id="vm-yml-file" accept=".xml,.yml" class="form-control">
+          <label style="margin-left:10px">{{ text_yml_max }}
+            <select id="vm-yml-max" class="form-control">{% for n in 1..6 %}<option value="{{ n }}"{% if n == yml_photos_max %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+          </label>
+          <button type="button" id="vm-yml-go" class="btn btn-primary" style="margin-left:10px"><i class="fa fa-upload"></i> {{ text_yml_go }}</button>
+          {% if yml_job and not yml_job.finished %}<button type="button" id="vm-yml-resume" class="btn btn-default"><i class="fa fa-play"></i> {{ button_resume }}</button>{% endif %}
+        </div>
+        <div id="vm-yml-status" style="max-width:820px">{% if yml_job and yml_job.finished %}<div class="alert alert-success">{{ text_yml_last|format(yml_job.date, yml_job.stats.matched, yml_job.stats.photos, yml_job.stats.props, yml_job.stats.desc) }}</div>{% endif %}</div>
+        <div class="progress" id="vm-yml-bar" style="display:none;max-width:820px"><div class="progress-bar progress-bar-striped active" style="width:0%"></div></div>
+        <h4 style="margin-top:18px">{{ text_yml_photos }}</h4>
+        <p id="vm-yml-pstats">{{ text_yml_pstats|format(yml_photo.done, yml_photo.products, yml_photo.pending, yml_photo.failed) }}</p>
+        {% if yml_photo.error %}<p class="text-danger small">{{ yml_photo.error }}</p>{% endif %}
+        <button type="button" id="vm-yml-photos" class="btn btn-success"{% if not yml_photo.pending %} disabled{% endif %}><i class="fa fa-download"></i> {{ text_yml_photos_go }}</button>
+        <button type="button" id="vm-yml-stop" class="btn btn-default" style="display:none"><i class="fa fa-stop"></i> {{ text_yml_stop }}</button>
+        <p class="help-block">{{ text_yml_cron }}</p>
+      </div>
+    </div>
+
     <!-- import -->
     <div class="panel panel-primary">
       <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-upload"></i> {{ text_imp_title }}</h3></div>
@@ -397,6 +421,67 @@
           }).fail(function () { setTimeout(function () { go(after); }, 4000); });
         })(0);
       });
+    });
+  })();
+
+  // ---------- UTR YML
+  (function () {
+    var st = $('#vm-yml-status'), bar = $('#vm-yml-bar'), pb = bar.find('.progress-bar'), CH = 4 * 1024 * 1024;
+    function msg(cls, t) { st.html('<div class="alert alert-' + cls + '">' + t + '</div>'); }
+    function fail(x) { msg('danger', x && x.responseText ? $('<div>').text(x.responseText.substr(0, 400)).html() : '{{ text_yml_neterr|e('js') }}'); $('#vm-yml-go').prop('disabled', false); }
+    function steps() {
+      $.ajax({ url: '{{ yml_step_url|e('js') }}', dataType: 'json', timeout: 180000 }).done(function (j) {
+        if (j.error) { msg('danger', j.error); $('#vm-yml-go').prop('disabled', false); return; }
+        var pct = j.total ? Math.round(100 * j.done / j.total) : 0;
+        pb.css('width', pct + '%');
+        var s = j.stats;
+        if (j.finished) {
+          msg('success', '{{ text_yml_done|e('js') }}'.replace('%s', s.matched).replace('%s', s.unmatched).replace('%s', s.photos).replace('%s', s.props).replace('%s', s.desc));
+          $('#vm-yml-go').prop('disabled', false); setTimeout(function () { bar.hide(); }, 1500);
+          $('#vm-yml-photos').prop('disabled', false);
+          return;
+        }
+        msg('info', '{{ text_yml_run|e('js') }}'.replace('%s', j.done).replace('%s', j.total).replace('%s', s.matched).replace('%s', s.photos));
+        steps();
+      }).fail(function () { setTimeout(steps, 4000); });
+    }
+    $('#vm-yml-resume').on('click', function () { bar.show(); steps(); });
+    $('#vm-yml-go').on('click', function () {
+      var f = $('#vm-yml-file')[0].files[0];
+      if (!f) { msg('warning', '{{ text_yml_pick|e('js') }}'); return; }
+      $(this).prop('disabled', true); bar.show(); pb.css('width', '0%');
+      var parts = Math.ceil(f.size / CH);
+      (function send(i) {
+        if (i >= parts) {
+          msg('info', '{{ text_yml_parsing|e('js') }}');
+          $.post('{{ yml_start_url|e('js') }}', { photos: $('#vm-yml-max').val() }, null, 'json').done(function (j) {
+            if (j.error) { msg('danger', j.error); $('#vm-yml-go').prop('disabled', false); return; }
+            pb.css('width', '0%'); steps();
+          }).fail(fail);
+          return;
+        }
+        var fd = new FormData(); fd.append('index', i); fd.append('chunk', f.slice(i * CH, Math.min(f.size, (i + 1) * CH)), 'part');
+        $.ajax({ url: '{{ yml_chunk_url|e('js') }}', type: 'POST', data: fd, processData: false, contentType: false, dataType: 'json', timeout: 180000 }).done(function (j) {
+          if (j.error) { msg('danger', j.error); $('#vm-yml-go').prop('disabled', false); return; }
+          pb.css('width', Math.round(100 * (i + 1) / parts) + '%');
+          msg('info', '{{ text_yml_upload|e('js') }}'.replace('%s', Math.round((i + 1) * CH / 1048576 > f.size / 1048576 ? f.size / 1048576 : (i + 1) * CH / 1048576)).replace('%s', Math.round(f.size / 1048576)));
+          send(i + 1);
+        }).fail(function (x) { if (i > 0 && x.status === 0) { setTimeout(function () { send(i); }, 3000); } else { fail(x); } });
+      })(0);
+    });
+    var stop = false;
+    $('#vm-yml-stop').on('click', function () { stop = true; });
+    $('#vm-yml-photos').on('click', function () {
+      var btn = $(this).prop('disabled', true); stop = false; $('#vm-yml-stop').show();
+      (function go() {
+        $.ajax({ url: '{{ yml_photos_url|e('js') }}', dataType: 'json', timeout: 180000 }).done(function (j) {
+          if (j.error) { $('#vm-yml-pstats').text(j.error); btn.prop('disabled', false); $('#vm-yml-stop').hide(); return; }
+          var s = j.stats;
+          $('#vm-yml-pstats').text('{{ text_yml_pstats|e('js') }}'.replace('%s', s.done).replace('%s', s.products).replace('%s', s.pending).replace('%s', s.failed));
+          if (stop || !s.pending || (j.run && j.run.done === 0 && j.run.failed > 0 && s.error)) { btn.prop('disabled', !s.pending); $('#vm-yml-stop').hide(); if (s.error) $('#vm-yml-pstats').append(' — ' + s.error); return; }
+          go();
+        }).fail(function () { setTimeout(go, 4000); });
+      })();
     });
   })();
 })(jQuery);

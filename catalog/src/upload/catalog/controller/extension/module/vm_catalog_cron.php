@@ -37,10 +37,30 @@ class ControllerExtensionModuleVmCatalogCron extends Controller {
 		}
 
 		$seconds = isset($this->request->get['seconds']) ? max(10, min(280, (int)$this->request->get['seconds'])) : 50;
+
+		// photos from the UTR YML first (no API limits), then BM Parts with the rest of the time
+		$photo_line = '';
+		$yfile = dirname($file) . '/yml.php';
+
+		if (is_file($yfile)) {
+			require_once $yfile;
+			$y = new VmCatalogYml($this->registry);
+			$ys = $y->photoStats();
+
+			if ($ys['pending'] > 0) {
+				$t0 = microtime(true);
+				$yr = $y->runPhotos((int)round($seconds * 0.5));
+				$seconds = max(10, $seconds - (int)round(microtime(true) - $t0));
+				$ys = $y->photoStats();
+			}
+
+			$photo_line = "\nutr photos: done=" . $ys['done'] . ' pending=' . $ys['pending'] . ' failed=' . $ys['failed'] . (isset($yr) ? ' this_run=' . $yr['done'] : '') . ($ys['error'] !== '' ? ' last_error=' . $ys['error'] : '');
+		}
+
 		$e = new VmCatalogEnricher($this->registry);
 		$run = $e->run($seconds, 300);
 		$s = $e->stats();
 
-		$this->response->setOutput(date('Y-m-d H:i:s') . ' checked=' . $run['checked'] . ' found=' . $run['found'] . ' notfound=' . $run['notfound'] . ' errors=' . $run['errors'] . ' requests=' . $run['requests'] . (!empty($run['brand_skipped']) ? ' brand_skipped=' . $run['brand_skipped'] : '') . ($run['stopped'] ? ' stop=' . $run['stopped'] : '') . "\ntotal: " . $s['checked'] . '/' . $s['total'] . ' found=' . $s['found'] . ' cars=' . $s['links'] . ' photos=' . $s['images'] . ' photo_fail=' . (isset($s['img_failed']) ? $s['img_failed'] : '-') . "\nversion: " . @trim(file_get_contents(dirname($file) . '/VERSION')) . ' photos_mode=' . $this->config->get('module_vm_catalog_bm_photos') . "\nlast photo error: " . (isset($s['img_error']) && $s['img_error'] !== '' ? $s['img_error'] : '-') . "\n");
+		$this->response->setOutput(date('Y-m-d H:i:s') . ' checked=' . $run['checked'] . ' found=' . $run['found'] . ' notfound=' . $run['notfound'] . ' errors=' . $run['errors'] . ' requests=' . $run['requests'] . (!empty($run['brand_skipped']) ? ' brand_skipped=' . $run['brand_skipped'] : '') . ($run['stopped'] ? ' stop=' . $run['stopped'] : '') . "\ntotal: " . $s['checked'] . '/' . $s['total'] . ' found=' . $s['found'] . ' cars=' . $s['links'] . ' photos=' . $s['images'] . ' photo_fail=' . (isset($s['img_failed']) ? $s['img_failed'] : '-') . "\nversion: " . @trim(file_get_contents(dirname($file) . '/VERSION')) . ' photos_mode=' . $this->config->get('module_vm_catalog_bm_photos') . "\nlast photo error: " . (isset($s['img_error']) && $s['img_error'] !== '' ? $s['img_error'] : '-') . $photo_line . "\n");
 	}
 }

@@ -54,6 +54,17 @@ class ModelExtensionModuleVmCatalog extends Model {
 		}
 	}
 
+	public function yml() {
+		static $y = null;
+
+		if ($y === null) {
+			require_once self::dataDir() . 'yml.php';
+			$y = new VmCatalogYml($this->registry);
+		}
+
+		return $y;
+	}
+
 	public function enricher() {
 		static $e = null;
 
