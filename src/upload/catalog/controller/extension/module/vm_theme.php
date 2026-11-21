@@ -271,22 +271,30 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$name = preg_replace('#^.*?(account|checkout)/#', '$1/', $route);
 		$file = is_file(DIR_TEMPLATE . 'vm_parts/template/' . $name . '.twig') ? 'vm_parts/template/' . $name . '.twig' : 'default/template/' . $name . '.twig';
 
+		if (strpos($name, 'checkout/') === 0) {
+			return; // checkout works; diagnostics only for the account pages
+		}
+
 		if (!is_file(DIR_TEMPLATE . $file) || !class_exists('Twig\\Environment')) {
+			$this->log->write('VM Parts / Simple ' . $name . ': no check (file ' . (is_file(DIR_TEMPLATE . $file) ? 'ok' : 'missing: ' . $file) . ', Twig ' . (class_exists('Twig\\Environment') ? 'ok' : (class_exists('Twig_Environment') ? 'v1' : 'missing')) . ', theme ' . $this->version() . ')');
+
 			return;
 		}
 
 		try {
-			$twig = new \Twig\Environment(new \Twig\Loader\FilesystemLoader(array(DIR_TEMPLATE)), array('autoescape' => false, 'cache' => false));
-			$twig->load($file);
-
-			foreach (array('simple_header', 'simple_footer') as $k) {
-				if (!empty($data[$k])) {
-					$twig->load($data[$k]);
-				}
-			}
+			$twig = new \Twig\Environment(new \Twig\Loader\FilesystemLoader(array(DIR_TEMPLATE)), array('autoescape' => false, 'cache' => false, 'strict_variables' => false));
+			// full render with the same data Simple passes, so a runtime problem is caught too
+			$twig->render($file, $data);
+			$this->log->write('VM Parts / Simple ' . $name . ': test render OK (theme ' . $this->version() . ') header=' . (isset($data['simple_header']) ? $data['simple_header'] : '-'));
 		} catch (\Throwable $e) {
-			$this->log->write('VM Parts / Simple ' . $name . ': ' . $e->getMessage() . ' | header=' . (isset($data['simple_header']) ? $data['simple_header'] : '-') . ' footer=' . (isset($data['simple_footer']) ? $data['simple_footer'] : '-'));
+			$this->log->write('VM Parts / Simple ' . $name . ': ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine() . ' | header=' . (isset($data['simple_header']) ? $data['simple_header'] : '-') . ' footer=' . (isset($data['simple_footer']) ? $data['simple_footer'] : '-') . ' (theme ' . $this->version() . ')');
 		}
+	}
+
+	private function version() {
+		$f = DIR_TEMPLATE . 'vm_parts/VERSION';
+
+		return is_file($f) ? trim(file_get_contents($f)) : '?';
 	}
 
 	private function fallbackTemplate($route) {
