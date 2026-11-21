@@ -1,6 +1,27 @@
 {% if not ajax and not popup and not as_module %}
 {% set simple_page = 'simpleedit' %}
-{% include simple_header %}
+{{ header }}
+<div class="container">
+  <ul class="breadcrumb">
+    {% for breadcrumb in breadcrumbs %}
+    <li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>
+    {% endfor %}
+  </ul>
+  {% if error_warning %}
+  <div class="alert alert-danger alert-dismissible"><i class="fa fa-exclamation-circle"></i> {{ error_warning }}</div>
+  {% endif %}
+  <div class="row">{{ column_left }}
+    {% if column_left and column_right %}
+    {% set class = 'col-sm-6' %}
+    {% elseif column_left or column_right %}
+    {% set class = 'col-sm-9' %}
+    {% else %}
+    {% set class = 'col-sm-12' %}
+    {% endif %}
+    <div id="content" class="{{ class }}">{{ content_top }}
+      <h1>{{ heading_title }}</h1>
+      
+      
 <div class="simple-content">
 {% endif %}
     {% if not ajax or (ajax and popup) %}
@@ -56,5 +77,9 @@
     </form>
 {% if not ajax and not popup and not as_module %}
 </div>
-{% include simple_footer %}
+
+      {{ content_bottom }}</div>
+    {{ column_right }}</div>
+</div>
+{{ footer }}
 {% endif %}

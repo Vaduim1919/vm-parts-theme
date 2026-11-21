@@ -285,7 +285,6 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			$twig = new \Twig\Environment(new \Twig\Loader\FilesystemLoader(array(DIR_TEMPLATE)), array('autoescape' => false, 'cache' => false, 'strict_variables' => false));
 			// full render with the same data Simple passes, so a runtime problem is caught too
 			$twig->render($file, $data);
-			$this->log->write('VM Parts / Simple ' . $name . ': test render OK (theme ' . $this->version() . ') header=' . (isset($data['simple_header']) ? $data['simple_header'] : '-'));
 		} catch (\Throwable $e) {
 			$this->log->write('VM Parts / Simple ' . $name . ': ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine() . ' | header=' . (isset($data['simple_header']) ? $data['simple_header'] : '-') . ' footer=' . (isset($data['simple_footer']) ? $data['simple_footer'] : '-') . ' (theme ' . $this->version() . ')');
 		}
