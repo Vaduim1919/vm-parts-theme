@@ -449,7 +449,8 @@ class VmCatalogYml {
 	}
 
 	private function download($url, $file) {
-		$fh = @fopen($file . '.tmp', 'w');
+		$tmpf = $file . '.' . getmypid() . '-' . mt_rand(1000, 9999) . '.tmp';
+		$fh = @fopen($tmpf, 'w');
 
 		if (!$fh) {
 			$this->error = 'немає прав на запис у ' . dirname($file);
@@ -472,17 +473,19 @@ class VmCatalogYml {
 		$err = curl_error($ch);
 		curl_close($ch);
 		fclose($fh);
-		$size = (int)@filesize($file . '.tmp');
+		$size = (int)@filesize($tmpf);
 
-		if ($code == 200 && $size > 300 && @getimagesize($file . '.tmp')) {
-			$this->shrink($file . '.tmp');
-			rename($file . '.tmp', $file);
+		if ($code == 200 && $size > 300 && @getimagesize($tmpf)) {
+			$this->shrink($tmpf);
+			if (!@rename($tmpf, $file)) {
+				@unlink($tmpf);
+			}
 
 			return true;
 		}
 
 		$this->error = $url . ' → ' . ($err ? $err : 'HTTP ' . $code . ', ' . $size . ' байт');
-		@unlink($file . '.tmp');
+		@unlink($tmpf);
 
 		return false;
 	}
@@ -517,10 +520,10 @@ class VmCatalogYml {
 		$dst = imagecreatetruecolor($nw, $nh);
 		imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255));
 		imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
-		$tmp = $file . '.jpg';
+		$tmp = $file . '.s.jpg';
 
 		if (@imagejpeg($dst, $tmp, 82)) {
-			rename($tmp, $file);
+			@rename($tmp, $file);
 		} else {
 			@unlink($tmp);
 		}

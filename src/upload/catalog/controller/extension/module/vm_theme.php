@@ -1517,7 +1517,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				'date'   => date('d.m.Y', strtotime($o['date_added'])),
 				'status' => $o['status'],
 				'total'  => $this->currency->format($o['total'], $o['currency_code'], $o['currency_value']),
-				'items'  => (int)$o['products'],
+				'items'  => isset($o['products']) ? (int)$o['products'] : (int)$this->model_account_order->getTotalOrderProductsByOrderId($o['order_id']),
 				'href'   => $this->url->link('account/order/info', 'order_id=' . $o['order_id'], true)
 			);
 		}

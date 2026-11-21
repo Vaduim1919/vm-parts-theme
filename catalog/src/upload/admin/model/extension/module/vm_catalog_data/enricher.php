@@ -183,7 +183,8 @@ class VmCatalogEnricher {
 	public $imgError = '';
 
 	private function download($url, $file) {
-		$fh = @fopen($file . '.tmp', 'w');
+		$tmpf = $file . '.' . getmypid() . '-' . mt_rand(1000, 9999) . '.tmp';
+		$fh = @fopen($tmpf, 'w');
 
 		if (!$fh) {
 			$this->imgError = 'немає прав на запис у ' . dirname($file);
@@ -210,25 +211,27 @@ class VmCatalogEnricher {
 		curl_close($ch);
 		fclose($fh);
 
-		$size = (int)@filesize($file . '.tmp');
+		$size = (int)@filesize($tmpf);
 
-		if ($code == 200 && $size > 500 && @getimagesize($file . '.tmp')) {
-			$this->shrink($file . '.tmp');
-			rename($file . '.tmp', $file);
+		if ($code == 200 && $size > 500 && @getimagesize($tmpf)) {
+			$this->shrink($tmpf);
+			if (!@rename($tmpf, $file)) {
+				@unlink($tmpf);
+			}
 			$this->imgError = '';
 
 			return true;
 		}
 
 		$this->imgError = $url . ' → ' . ($err ? $err : 'HTTP ' . $code . ', ' . ($type ?: 'без типу') . ', ' . $size . ' байт');
-		@unlink($file . '.tmp');
+		@unlink($tmpf);
 
 		return false;
 	}
 
 	// big supplier photos -> max 800 px, JPEG quality 82 (keeps the hosting disk small)
 	private function shrink($file) {
-		if (!function_exists('imagecreatefromstring') || filesize($file) < 70000) {
+		if (!function_exists('imagecreatefromstring') || !is_file($file) || @filesize($file) < 70000) {
 			return;
 		}
 
@@ -252,10 +255,10 @@ class VmCatalogEnricher {
 		$dst = imagecreatetruecolor($nw, $nh);
 		imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255)); // transparent PNG -> white
 		imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
-		$tmp = $file . '.jpg';
+		$tmp = $file . '.s.jpg';
 
-		if (@imagejpeg($dst, $tmp, 82) && filesize($tmp) < filesize($file)) {
-			rename($tmp, $file);
+		if (@imagejpeg($dst, $tmp, 82) && is_file($file) && @filesize($tmp) < @filesize($file)) {
+			@rename($tmp, $file);
 		} else {
 			@unlink($tmp);
 		}
