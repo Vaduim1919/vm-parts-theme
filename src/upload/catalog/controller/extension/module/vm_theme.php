@@ -151,6 +151,10 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$data['vm_t'] = $this->texts();
 		$data['vm'] = $this->settings();
 
+		if (preg_match('#(^|/)account/simple(register|edit|address)$#', $route) || preg_match('#(^|/)checkout/simplecheckout$#', $route)) {
+			$this->simpleFix($route, $data);
+		}
+
 		if ($route === 'product/search') {
 			$this->searchByOe($data);
 		}
@@ -245,6 +249,46 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 	// Templates that exist neither in vm_parts nor in default (modules of the previous theme,
 	// e.g. a blog or newsletter block) are taken from the previous theme instead of failing.
+	// Simple pages include their header/footer by a template path; make sure it points to a file that exists,
+	// and if the page still cannot render, write the real Twig error to the error log (OpenCart hides it).
+	private function simpleFix($route, &$data) {
+		foreach (array('simple_header', 'simple_footer') as $k) {
+			$cur = isset($data[$k]) ? ltrim((string)$data[$k], '/') : '';
+			$cur = (strpos($cur, DIR_TEMPLATE) === 0) ? substr($cur, strlen(DIR_TEMPLATE)) : $cur;
+
+			if ($cur === '' || !is_file(DIR_TEMPLATE . $cur)) {
+				foreach (array('vm_parts/template/common/' . $k . '.twig', 'default/template/common/' . $k . '.twig') as $try) {
+					if (is_file(DIR_TEMPLATE . $try)) {
+						$data[$k] = $try;
+						break;
+					}
+				}
+			} else {
+				$data[$k] = $cur;
+			}
+		}
+
+		$name = preg_replace('#^.*?(account|checkout)/#', '$1/', $route);
+		$file = is_file(DIR_TEMPLATE . 'vm_parts/template/' . $name . '.twig') ? 'vm_parts/template/' . $name . '.twig' : 'default/template/' . $name . '.twig';
+
+		if (!is_file(DIR_TEMPLATE . $file) || !class_exists('Twig\\Environment')) {
+			return;
+		}
+
+		try {
+			$twig = new \Twig\Environment(new \Twig\Loader\FilesystemLoader(array(DIR_TEMPLATE)), array('autoescape' => false, 'cache' => false));
+			$twig->load($file);
+
+			foreach (array('simple_header', 'simple_footer') as $k) {
+				if (!empty($data[$k])) {
+					$twig->load($data[$k]);
+				}
+			}
+		} catch (\Throwable $e) {
+			$this->log->write('VM Parts / Simple ' . $name . ': ' . $e->getMessage() . ' | header=' . (isset($data['simple_header']) ? $data['simple_header'] : '-') . ' footer=' . (isset($data['simple_footer']) ? $data['simple_footer'] : '-'));
+		}
+	}
+
 	private function fallbackTemplate($route) {
 		if (is_file(DIR_TEMPLATE . 'vm_parts/template/' . $route . '.twig') || is_file(DIR_TEMPLATE . 'default/template/' . $route . '.twig')) {
 			return;
