@@ -152,7 +152,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$data['vm'] = $this->settings();
 
 		if (preg_match('#(^|/)account/simple(register|edit|address)$#', $route) || preg_match('#(^|/)checkout/simplecheckout$#', $route)) {
-			$this->simpleFix($route, $data);
+			$this->simpleFix($route, $data, $code);
 		}
 
 		if ($route === 'product/search') {
@@ -249,45 +249,68 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 	// Templates that exist neither in vm_parts nor in default (modules of the previous theme,
 	// e.g. a blog or newsletter block) are taken from the previous theme instead of failing.
-	// Simple pages include their header/footer by a template path; make sure it points to a file that exists,
-	// and if the page still cannot render, write the real Twig error to the error log (OpenCart hides it).
-	private function simpleFix($route, &$data) {
-		foreach (array('simple_header', 'simple_footer') as $k) {
-			$cur = isset($data[$k]) ? ltrim((string)$data[$k], '/') : '';
-			$cur = (strpos($cur, DIR_TEMPLATE) === 0) ? substr($cur, strlen(DIR_TEMPLATE)) : $cur;
+	// Simple pages pull their header/footer with {% include simple_header %}. Stock OpenCart 3.0.4 renders templates
+	// from a single string (ArrayLoader), so the include only works with Simple's "twig fix" modification. Without it the
+	// page dies with "Could not load template". Inline the header/footer into the template code instead.
+	private function simpleFix($route, &$data, &$code) {
+		$read = function ($rel) {
+			$rel = ltrim((string)$rel, '/');
 
-			if ($cur === '' || !is_file(DIR_TEMPLATE . $cur)) {
-				foreach (array('vm_parts/template/common/' . $k . '.twig', 'default/template/common/' . $k . '.twig') as $try) {
-					if (is_file(DIR_TEMPLATE . $try)) {
-						$data[$k] = $try;
-						break;
-					}
+			if (strpos($rel, DIR_TEMPLATE) === 0) {
+				$rel = substr($rel, strlen(DIR_TEMPLATE));
+			}
+
+			$rel = preg_replace('/\.twig$/', '', $rel);
+
+			foreach (array(DIR_MODIFICATION . 'catalog/view/theme/' . $rel . '.twig', DIR_TEMPLATE . $rel . '.twig') as $f) {
+				if (is_file($f)) {
+					return file_get_contents($f);
 				}
-			} else {
-				$data[$k] = $cur;
+			}
+
+			return null;
+		};
+
+		$name = preg_replace('#^.*?(account|checkout)/#', '$1/', $route);
+		$main = null;
+
+		if ($code) {
+			$main = $code;
+		} else {
+			foreach (array((strpos($route, '/template/') !== false ? $route : ''), 'vm_parts/template/' . $name, 'default/template/' . $name) as $try) {
+				if ($try !== '' && ($main = $read($try)) !== null) {
+					break;
+				}
 			}
 		}
 
-		$name = preg_replace('#^.*?(account|checkout)/#', '$1/', $route);
-		$file = is_file(DIR_TEMPLATE . 'vm_parts/template/' . $name . '.twig') ? 'vm_parts/template/' . $name . '.twig' : 'default/template/' . $name . '.twig';
-
-		if (strpos($name, 'checkout/') === 0) {
-			return; // checkout works; diagnostics only for the account pages
-		}
-
-		if (!is_file(DIR_TEMPLATE . $file) || !class_exists('Twig\\Environment')) {
-			$this->log->write('VM Parts / Simple ' . $name . ': no check (file ' . (is_file(DIR_TEMPLATE . $file) ? 'ok' : 'missing: ' . $file) . ', Twig ' . (class_exists('Twig\\Environment') ? 'ok' : (class_exists('Twig_Environment') ? 'v1' : 'missing')) . ', theme ' . $this->version() . ')');
-
+		if ($main === null || !preg_match('/\{%-?\s*include\s+simple_(header|footer)/', $main)) {
 			return;
 		}
 
-		try {
-			$twig = new \Twig\Environment(new \Twig\Loader\FilesystemLoader(array(DIR_TEMPLATE)), array('autoescape' => false, 'cache' => false, 'strict_variables' => false));
-			// full render with the same data Simple passes, so a runtime problem is caught too
-			$twig->render($file, $data);
-		} catch (\Throwable $e) {
-			$this->log->write('VM Parts / Simple ' . $name . ': ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine() . ' | header=' . (isset($data['simple_header']) ? $data['simple_header'] : '-') . ' footer=' . (isset($data['simple_footer']) ? $data['simple_footer'] : '-') . ' (theme ' . $this->version() . ')');
+		$parts = array();
+
+		foreach (array('header', 'footer') as $k) {
+			$src = null;
+
+			foreach (array(isset($data['simple_' . $k]) ? $data['simple_' . $k] : '', 'vm_parts/template/common/simple_' . $k, 'default/template/common/simple_' . $k) as $try) {
+				if ($try !== '' && ($src = $read($try)) !== null) {
+					break;
+				}
+			}
+
+			if ($src === null) {
+				$this->log->write('VM Parts / Simple ' . $name . ': simple_' . $k . '.twig not found');
+
+				return;
+			}
+
+			$parts[$k] = $src;
 		}
+
+		$code = preg_replace_callback('/\{%-?\s*include\s+simple_(header|footer)\s*-?%\}/', function ($m) use ($parts) {
+			return $parts[$m[1]];
+		}, $main);
 	}
 
 	private function version() {
