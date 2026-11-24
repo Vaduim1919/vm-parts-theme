@@ -780,6 +780,54 @@ class ControllerExtensionModuleVmTheme extends Controller {
 	}
 
 
+	// Own file cache. OpenCart's Cache\File truncates the file before writing, so a page reading it at the same
+	// moment gets "fread(): Length parameter must be greater than 0". Here a file is written to a temp name and
+	// renamed into place (atomic), and lives outside the cache.* pattern OpenCart scans on every request.
+	private function vmCacheFile($key) {
+		$key = preg_replace('/[^A-Za-z0-9._-]/', '', (string)$key);
+
+		return DIR_CACHE . 'vm_theme/' . substr(md5($key), 0, 2) . '/' . $key . '.json';
+	}
+
+	private function vmCacheGet($key, $ttl = 3600) {
+		$file = $this->vmCacheFile($key);
+		$time = @filemtime($file);
+
+		if (!$time || $time < time() - $ttl) {
+			return false;
+		}
+
+		$raw = @file_get_contents($file);
+
+		return ($raw === false || $raw === '') ? false : json_decode($raw, true);
+	}
+
+	private function vmCacheSet($key, $value) {
+		$file = $this->vmCacheFile($key);
+		$dir = dirname($file);
+
+		if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+			return;
+		}
+
+		$tmp = $dir . '/.' . basename($file) . '.' . getmypid() . '.' . mt_rand(1000, 9999);
+
+		if (@file_put_contents($tmp, json_encode($value)) !== false) {
+			if (!@rename($tmp, $file)) {
+				@unlink($tmp);
+			}
+		}
+
+		// now and then drop files older than a day so the folder does not grow forever
+		if (mt_rand(1, 500) === 1) {
+			foreach ((array)glob(DIR_CACHE . 'vm_theme/' . substr(md5((string)mt_rand()), 0, 2) . '/*') as $old) {
+				if (is_file($old) && filemtime($old) < time() - 86400) {
+					@unlink($old);
+				}
+			}
+		}
+	}
+
 	private function hasTable($name) {
 		static $cache = array();
 
@@ -939,7 +987,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$out = array('ids' => array(), 'via' => array(), 'more' => 0, 'min' => null);
 		$id = (int)$id;
 		$cache_key = 'vm_cross.' . $id . '.' . (int)$this->config->get('config_store_id');
-		$hit = $this->cache->get($cache_key);
+		$hit = $this->vmCacheGet($cache_key);
 
 		if (is_array($hit) && isset($hit['ids'])) {
 			return $hit;
@@ -1047,7 +1095,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			$out['more'] = max(0, count($sell) - count($out['ids']));
 		}
 
-		$this->cache->set($cache_key, $out);
+		$this->vmCacheSet($cache_key, $out);
 
 		return $out;
 	}
@@ -1423,7 +1471,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$lang = (int)$this->config->get('config_language_id');
 		$active = $this->filterActive($sel);
 		$ckey = 'vm_filter.' . (int)$cat_id . '.' . $lang . '.' . (int)$this->config->get('config_store_id');
-		$cached = $active ? null : $this->cache->get($ckey);
+		$cached = $active ? null : $this->vmCacheGet($ckey);
 
 		if (!is_array($cached)) {
 			$f = array();
@@ -1471,7 +1519,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			$cached = $f;
 
 			if (!$active) {
-				$this->cache->set($ckey, $f);
+				$this->vmCacheSet($ckey, $f);
 			}
 		}
 
@@ -1852,7 +1900,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 	// product count per category (whole subtree), active products only; cached for an hour
 	private function categoryCounts() {
 		$key = 'vm_home.catcounts.' . (int)$this->config->get('config_store_id') . '.' . (int)$this->config->get('config_language_id');
-		$data = $this->cache->get($key);
+		$data = $this->vmCacheGet($key);
 
 		if (is_array($data)) {
 			return $data;
@@ -1884,7 +1932,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			}
 		}
 
-		$this->cache->set($key, $data);
+		$this->vmCacheSet($key, $data);
 
 		return $data;
 	}
@@ -2089,7 +2137,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			return array();
 		}
 
-		$data = $this->cache->get($this->carCacheKey('makes'));
+		$data = $this->vmCacheGet($this->carCacheKey('makes'));
 
 		if (is_array($data)) {
 			return $data;
@@ -2113,7 +2161,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			return strnatcasecmp($a['name'], $b['name']);
 		});
 
-		$this->cache->set($this->carCacheKey('makes'), $data);
+		$this->vmCacheSet($this->carCacheKey('makes'), $data);
 
 		return $data;
 	}
@@ -2125,7 +2173,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			return array();
 		}
 
-		$data = $this->cache->get($this->carCacheKey('models.' . $make_id));
+		$data = $this->vmCacheGet($this->carCacheKey('models.' . $make_id));
 
 		if (is_array($data)) {
 			return $data;
@@ -2156,7 +2204,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			return $c ? $c : ($a['yf'] - $b['yf'] ? $a['yf'] - $b['yf'] : strnatcasecmp($a['name'], $b['name']));
 		});
 
-		$this->cache->set($this->carCacheKey('models.' . $make_id), $data);
+		$this->vmCacheSet($this->carCacheKey('models.' . $make_id), $data);
 
 		return $data;
 	}
