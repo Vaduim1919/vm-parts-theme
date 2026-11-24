@@ -519,7 +519,7 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		}
 
 		$y = $this->model_extension_module_vm_catalog->yml();
-		$run = $y->runPhotos(20);
+		$run = $y->runPhotos(20, true); // the button skips the disk-full pause: space may have been freed
 		$this->json(array('run' => $run, 'stats' => $y->photoStats()));
 	}
 

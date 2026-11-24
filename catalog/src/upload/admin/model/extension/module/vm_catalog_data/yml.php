@@ -370,7 +370,7 @@ class VmCatalogYml {
 		return array('pending' => (int)$r['pending'], 'done' => (int)$r['done'], 'failed' => (int)$r['failed'], 'products' => (int)$r['products'], 'error' => (string)$this->setting('yml_photo_error'));
 	}
 
-	public function runPhotos($seconds = 20) {
+	public function runPhotos($seconds = 20, $force = false) {
 		$this->install();
 		$p = DB_PREFIX;
 		$start = microtime(true);
@@ -381,6 +381,27 @@ class VmCatalogYml {
 			$res['busy'] = 1;
 
 			return $res;
+		}
+
+		// out of disk space earlier: wait, then check again with a test file
+		if (!$force && (int)$this->setting('yml_photo_pause') > time()) {
+			$res['paused'] = 1;
+
+			return $res;
+		}
+
+		if (!$this->canWrite()) {
+			$this->diskFull();
+			$res['paused'] = 1;
+
+			return $res;
+		}
+
+		if ($this->setting('yml_photo_diskfull')) {
+			// space is back: photos that failed while the disk was full get another try
+			$this->db->query("UPDATE `{$p}vm_catalog_photo` SET status = 0 WHERE status = 2");
+			$this->saveSetting('yml_photo_diskfull', '');
+			$this->saveSetting('yml_photo_error', '');
 		}
 
 		@touch($lock);
@@ -409,7 +430,15 @@ class VmCatalogYml {
 				}
 
 				$rel = $sub . $pid . ($row['pos'] ? '-' . ((int)$row['pos'] + 1) : '') . '.jpg';
+				$this->noSpace = false;
 				$ok = $this->download($row['url'], DIR_IMAGE . $rel);
+
+				if (!$ok && $this->noSpace) {
+					// not the photo's fault: keep it in the queue and stop until there is space again
+					$this->diskFull();
+					$res['paused'] = 1;
+					break 2;
+				}
 
 				if ($ok) {
 					$img = $this->db->query("SELECT image FROM `{$p}product` WHERE product_id = '" . $pid . "'")->row;
@@ -432,13 +461,40 @@ class VmCatalogYml {
 
 		@unlink($lock);
 
-		if ($res['failed'] && !$res['done']) {
+		if (!empty($res['paused'])) {
+			// message already saved by diskFull()
+		} elseif ($res['failed'] && !$res['done']) {
 			$this->saveSetting('yml_photo_error', date('d.m H:i') . ' ' . $this->error);
 		} elseif ($res['done'] && $this->setting('yml_photo_error') !== '') {
 			$this->saveSetting('yml_photo_error', '');
 		}
 
 		return $res;
+	}
+
+	private $noSpace = false;
+
+	// a 256 KB test file in the photo folder: fails when the hosting disk quota is used up
+	private function canWrite() {
+		$dir = DIR_IMAGE . 'catalog/utr/';
+
+		if (!is_dir($dir)) {
+			@mkdir($dir, 0755, true);
+		}
+
+		$probe = $dir . '.space-' . getmypid() . '.tmp';
+		$n = @file_put_contents($probe, str_repeat('0', 262144));
+		clearstatcache(true, $probe);
+		$ok = $n === 262144 && (int)@filesize($probe) === 262144;
+		@unlink($probe);
+
+		return $ok;
+	}
+
+	private function diskFull() {
+		$this->saveSetting('yml_photo_pause', (string)(time() + 3 * 3600));
+		$this->saveSetting('yml_photo_diskfull', '1');
+		$this->saveSetting('yml_photo_error', date('d.m H:i') . ' На хостингу закінчилося місце: завантаження фото призупинено (перевірка знову через 3 год). Звільніть місце або збільште диск у тарифі — фото продовжать завантажуватися самі.');
 	}
 
 	private function saveSetting($key, $value) {
@@ -471,14 +527,41 @@ class VmCatalogYml {
 		curl_exec($ch);
 		$code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		$err = curl_error($ch);
+		$errno = (int)curl_errno($ch);
+		$got = (int)curl_getinfo($ch, CURLINFO_SIZE_DOWNLOAD);
 		curl_close($ch);
-		fclose($fh);
+		$closed = @fclose($fh);
+		clearstatcache(true, $tmpf);
 		$size = (int)@filesize($tmpf);
+
+		// 23 = CURLE_WRITE_ERROR; or the server sent the picture but less of it reached the disk
+		if ($errno == 23 || !$closed || ($code == 200 && $got > 300 && $size < $got)) {
+			$this->noSpace = true;
+			$this->error = 'не вдалося записати файл у ' . dirname($file);
+			@unlink($tmpf);
+
+			return false;
+		}
 
 		if ($code == 200 && $size > 300 && @getimagesize($tmpf)) {
 			$this->shrink($tmpf);
+
 			if (!@rename($tmpf, $file)) {
 				@unlink($tmpf);
+				$this->noSpace = !$this->canWrite();
+				$this->error = 'не вдалося зберегти ' . $file;
+
+				return false;
+			}
+
+			clearstatcache(true, $file);
+
+			if ((int)@filesize($file) <= 300) {
+				@unlink($file);
+				$this->noSpace = true;
+				$this->error = 'не вдалося записати файл у ' . dirname($file);
+
+				return false;
 			}
 
 			return true;
@@ -522,7 +605,11 @@ class VmCatalogYml {
 		imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
 		$tmp = $file . '.s.jpg';
 
-		if (@imagejpeg($dst, $tmp, 82)) {
+		$ok = @imagejpeg($dst, $tmp, 82);
+		clearstatcache(true, $tmp);
+
+		// imagejpeg() reports success even when the disk is full and the file stays empty
+		if ($ok && (int)@filesize($tmp) > 300 && @getimagesize($tmp)) {
 			@rename($tmp, $file);
 		} else {
 			@unlink($tmp);

@@ -507,7 +507,7 @@
           if (j.error) { $('#vm-yml-pstats').text(j.error); btn.prop('disabled', false); $('#vm-yml-stop').hide(); return; }
           var s = j.stats;
           $('#vm-yml-pstats').text('{{ text_yml_pstats|e('js') }}'.replace('%s', s.done).replace('%s', s.products).replace('%s', s.pending).replace('%s', s.failed));
-          if (stop || !s.pending || (j.run && j.run.done === 0 && j.run.failed > 0 && s.error)) { btn.prop('disabled', !s.pending); $('#vm-yml-stop').hide(); if (s.error) $('#vm-yml-pstats').append(' — ' + s.error); return; }
+          if (stop || !s.pending || (j.run && j.run.paused) || (j.run && j.run.done === 0 && j.run.failed > 0 && s.error)) { btn.prop('disabled', !s.pending); $('#vm-yml-stop').hide(); if (s.error) $('#vm-yml-pstats').append(' — ' + s.error); return; }
           go();
         }).fail(function () { setTimeout(go, 4000); });
       })();
