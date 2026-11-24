@@ -931,6 +931,127 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		return $tree;
 	}
 
+	// Cross-references, both directions, only what can be sold now (own stock or supplier stock):
+	//  1) analogs BM lists for this product;  2) products whose BM analog list contains this product;
+	//  3) products sharing an OE number (same parts group when both groups are known);
+	//  4) original parts whose article is one of our OE numbers;  5) aftermarket parts listing our article as OE.
+	private function crosses($id, $node, $model) {
+		$out = array('ids' => array(), 'via' => array(), 'more' => 0, 'min' => null);
+		$id = (int)$id;
+		$cache_key = 'vm_cross.' . $id . '.' . (int)$this->config->get('config_store_id');
+		$hit = $this->cache->get($cache_key);
+
+		if (is_array($hit) && isset($hit['ids'])) {
+			return $hit;
+		}
+
+		if (!$this->hasTable('vm_catalog_item')) {
+			return $out;
+		}
+
+		$p = DB_PREFIX;
+		$self = $this->db->query("SELECT art_key, brand_key FROM `{$p}vm_catalog_item` WHERE product_id = '" . $id . "' LIMIT 1")->row;
+		$art = $self ? (string)$self['art_key'] : self::partKey($model);
+		$brand = $self ? (string)$self['brand_key'] : '';
+		$found = array(); // product_id => via text key (first, most reliable source wins)
+		$add = function ($rows, $via) use (&$found, $id) {
+			foreach ($rows as $r) {
+				$pid = (int)$r['product_id'];
+
+				if ($pid && $pid !== $id && !isset($found[$pid])) {
+					$found[$pid] = $via;
+				}
+			}
+		};
+		$has_an = $this->hasTable('vm_catalog_analog');
+		$has_oe = $this->hasTable('vm_catalog_oe');
+
+		if ($has_an) {
+			// same article + same brand; article alone only when it is long enough to be unambiguous
+			$add($this->db->query("SELECT DISTINCT i.product_id FROM `{$p}vm_catalog_analog` a
+				JOIN `{$p}vm_catalog_item` i ON (i.art_key = a.art_key AND (i.brand_key = a.brand_key OR CHAR_LENGTH(a.art_key) >= 7))
+				WHERE a.product_id = '" . $id . "' LIMIT 300")->rows, 'text_an_via_cross');
+
+			if (strlen($art) >= 3) {
+				$add($this->db->query("SELECT DISTINCT a.product_id FROM `{$p}vm_catalog_analog` a
+					WHERE a.art_key = '" . $this->db->escape($art) . "'" . ($brand !== '' && strlen($art) < 7 ? " AND a.brand_key = '" . $this->db->escape($brand) . "'" : '') . " LIMIT 300")->rows, 'text_an_via_cross');
+			}
+		}
+
+		if ($has_oe) {
+			$oe = array();
+
+			foreach ($this->db->query("SELECT oe_key FROM `{$p}vm_catalog_oe` WHERE product_id = '" . $id . "' AND CHAR_LENGTH(oe_key) >= 5 LIMIT 300")->rows as $r) {
+				$oe[$r['oe_key']] = "'" . $this->db->escape($r['oe_key']) . "'";
+			}
+
+			// a number shared by a huge number of products is junk (generic code, wrong feed), not a cross
+			if ($oe) {
+				foreach ($this->db->query("SELECT oe_key FROM `{$p}vm_catalog_oe` WHERE oe_key IN (" . implode(',', $oe) . ") GROUP BY oe_key HAVING COUNT(*) > 80")->rows as $r) {
+					unset($oe[$r['oe_key']]);
+				}
+			}
+
+			if ($oe) {
+				$in = implode(',', $oe);
+				$same_node = '';
+
+				if ($node !== '' && $this->hasTable('vm_catalog_enrich')) {
+					$same_node = " AND (e.node IS NULL OR e.node = '' OR e.node = '" . $this->db->escape($node) . "')";
+				}
+
+				$add($this->db->query("SELECT DISTINCT o.product_id FROM `{$p}vm_catalog_oe` o" . ($same_node ? " LEFT JOIN `{$p}vm_catalog_enrich` e ON (e.product_id = o.product_id)" : '') . "
+					WHERE o.oe_key IN (" . $in . ") AND o.product_id <> '" . $id . "'" . $same_node . " LIMIT 300")->rows, 'text_an_via_oe');
+				$add($this->db->query("SELECT DISTINCT i.product_id FROM `{$p}vm_catalog_item` i WHERE i.art_key IN (" . $in . ") LIMIT 100")->rows, 'text_an_via_orig');
+			}
+
+			if (strlen($art) >= 5) {
+				$rows = $this->db->query("SELECT DISTINCT o.product_id FROM `{$p}vm_catalog_oe` o WHERE o.oe_key = '" . $this->db->escape($art) . "' LIMIT 81")->rows;
+
+				if (count($rows) <= 80) {
+					$add($rows, 'text_an_via_oe');
+				}
+			}
+		}
+
+		if ($found) {
+			$in = implode(',', array_keys($found));
+			// sellable now: own stock first, then supplier stock; cheaper first
+			$rows = $this->db->query("SELECT p.product_id, p.quantity, p.price,
+					(SELECT COALESCE(MAX(i.remote_qty), 0) FROM `{$p}vm_catalog_item` i WHERE i.product_id = p.product_id AND i.price_in > 0) AS remote,
+					(SELECT ps.price FROM `{$p}product_special` ps WHERE ps.product_id = p.product_id AND ps.customer_group_id = '" . (int)$this->config->get('config_customer_group_id') . "' AND ((ps.date_start = '0000-00-00' OR ps.date_start < NOW()) AND (ps.date_end = '0000-00-00' OR ps.date_end > NOW())) ORDER BY ps.priority ASC, ps.price ASC LIMIT 1) AS special
+				FROM `{$p}product` p
+				JOIN `{$p}product_to_store` s ON (s.product_id = p.product_id AND s.store_id = '" . (int)$this->config->get('config_store_id') . "')
+				WHERE p.product_id IN (" . $in . ") AND p.status = 1 AND p.price > 0")->rows;
+			$sell = array();
+
+			foreach ($rows as $r) {
+				$local = (int)$r['quantity'] > 0;
+
+				if ($local || (int)$r['remote'] > 0) {
+					$price = $r['special'] !== null && (float)$r['special'] > 0 ? (float)$r['special'] : (float)$r['price'];
+					$sell[] = array((int)$r['product_id'], $local ? 0 : 1, $price);
+				}
+			}
+
+			usort($sell, function ($a, $b) {
+				return $a[1] !== $b[1] ? $a[1] - $b[1] : ($a[2] == $b[2] ? 0 : ($a[2] < $b[2] ? -1 : 1));
+			});
+
+			foreach (array_slice($sell, 0, 30) as $r) {
+				$out['ids'][] = $r[0];
+				$out['via'][$r[0]] = $found[$r[0]];
+				$out['min'] = $out['min'] === null ? $r[2] : min($out['min'], $r[2]);
+			}
+
+			$out['more'] = max(0, count($sell) - count($out['ids']));
+		}
+
+		$this->cache->set($cache_key, $out);
+
+		return $out;
+	}
+
 	private function productExtras(&$data) {
 		$id = (int)$data['product_id'];
 		$t = $this->texts();
@@ -958,27 +1079,27 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			}
 		}
 
-		if ($this->hasTable('vm_catalog_analog')) {
-			$all = (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "vm_catalog_analog` WHERE product_id = '" . $id . "'")->row['n'];
+		$cross = $this->crosses($id, $node, isset($data['model']) ? $data['model'] : '');
 
-			if ($all && $this->hasTable('vm_catalog_item')) {
-				$rows = $this->db->query("SELECT DISTINCT i.product_id FROM `" . DB_PREFIX . "vm_catalog_analog` a
-					JOIN `" . DB_PREFIX . "vm_catalog_item` i ON (i.art_key = a.art_key)
-					JOIN `" . DB_PREFIX . "product` p ON (p.product_id = i.product_id AND p.status = 1)
-					WHERE a.product_id = '" . $id . "' AND i.product_id <> '" . $id . "' LIMIT 24")->rows;
-				$ids = array();
+		if ($cross['ids']) {
+			$cards = $this->enrichProducts($this->cards($cross['ids']));
 
-				foreach ($rows as $r) {
-					$ids[] = (int)$r['product_id'];
-				}
-
-				if ($ids) {
-					$data['vm_analogs'] = $this->enrichProducts($this->cards($ids));
-				}
-
-				$data['vm_analogs_more'] = max(0, $all - count($data['vm_analogs']));
+			foreach ($cards as $k => $c) {
+				$cards[$k]['vm_via'] = isset($cross['via'][(int)$c['product_id']]) ? $t[$cross['via'][(int)$c['product_id']]] : '';
 			}
+
+			$data['vm_analogs'] = $cards;
 		}
+
+		$data['vm_analogs_more'] = $cross['more'];
+		$data['vm_an_alert'] = false;
+
+		if ($data['vm_analogs']) {
+			$q = $this->db->query("SELECT quantity FROM `" . DB_PREFIX . "product` WHERE product_id = '" . $id . "'")->row;
+			$remote = $this->hasTable('vm_catalog_item') ? (int)$this->db->query("SELECT COALESCE(MAX(remote_qty), 0) AS n FROM `" . DB_PREFIX . "vm_catalog_item` WHERE product_id = '" . $id . "' AND price_in > 0")->row['n'] : 0;
+			$data['vm_an_alert'] = $q && (int)$q['quantity'] <= 0 && $remote <= 0;
+		}
+		$data['vm_analogs_min'] = $cross['min'] !== null ? $this->currency->format($this->tax->calculate($cross['min'], 0, $this->config->get('config_tax')), $this->session->data['currency']) : '';
 
 		// characteristics: shop data + supplier data
 		$p = $data;

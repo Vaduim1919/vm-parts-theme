@@ -1255,3 +1255,14 @@ body.vm a.vm-promo > span:not(.vm-promo-ico){grid-column:1;grid-row:1;padding-ri
   body.vm a.vm-promo{min-height:0;padding:18px}
   .vm-promo-ico{width:56px;height:56px;font-size:24px}
 }
+
+/* 1.7.0 cross analogs */
+.vm-pp-analert{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0;padding:12px 14px;border:1px solid #f3c27a;background:#fff7e8;border-radius:10px;color:#7a4b00;text-decoration:none}
+.vm-pp-analert:hover,.vm-pp-analert:focus{text-decoration:none;color:#5c3800;background:#ffefd2}
+.vm-pp-analert .fa{font-size:18px;color:#e08a00}
+.vm-pp-analert span{flex:1;min-width:180px}
+.vm-pp-analert b{white-space:nowrap;color:var(--vm-green-dark)}
+.vm-an-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:2px;font-size:12px;color:var(--vm-light)}
+.vm-an-via{font-style:normal;padding:1px 7px;border-radius:20px;background:#eef4ff;color:#2a5bb8;font-size:11px}
+@media (max-width:575px){.vm-an-row{grid-template-columns:52px 1fr 44px;gap:10px}.vm-an-img img{width:52px;height:52px}.vm-an-price{grid-column:2;grid-row:2;font-size:15px}.vm-an-buy{grid-column:3;grid-row:1/3}}
+#tab-vm-analogs{scroll-margin-top:150px}
