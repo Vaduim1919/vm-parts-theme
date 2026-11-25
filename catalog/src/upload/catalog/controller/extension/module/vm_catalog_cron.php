@@ -29,6 +29,23 @@ class ControllerExtensionModuleVmCatalogCron extends Controller {
 
 		require_once $file;
 
+		// one cron run at a time: overlapping runs pile up PHP processes and the hosting answers 508
+		$lockdir = DIR_STORAGE . 'upload/vm_catalog/';
+
+		if (!is_dir($lockdir)) {
+			@mkdir($lockdir, 0755, true);
+		}
+
+		$cron_lock = @fopen($lockdir . 'cron.lock', 'c');
+
+		if (!$cron_lock || !flock($cron_lock, LOCK_EX | LOCK_NB)) {
+			$this->response->setOutput("busy: previous run still working\n");
+
+			return;
+		}
+
+		@set_time_limit(320);
+
 		if (!empty($this->request->get['photo_test'])) {
 			$e = new VmCatalogEnricher($this->registry);
 			$this->response->setOutput("photo test\n" . $e->photoTest() . "\n");
@@ -61,11 +78,11 @@ class ControllerExtensionModuleVmCatalogCron extends Controller {
 		$rebuild_line = '';
 		$e0 = new VmCatalogEnricher($this->registry);
 		$e0->install();
-		$rb = $e0->rebuildCars(0);
+		$rb = $e0->rebuildCars(0); // status only
 
 		if (empty($rb['finished'])) {
 			$t0 = microtime(true);
-			$rb = $e0->rebuildCars((int)round($seconds * 0.5));
+			$rb = $e0->rebuildCars(min(20, (int)round($seconds * 0.4)));
 			$seconds = max(10, $seconds - (int)round(microtime(true) - $t0));
 			$rebuild_line = "\ncars rebuild: " . $rb['done'] . '/' . (isset($rb['total']) ? $rb['total'] : '?') . (!empty($rb['finished']) ? ' finished' : '');
 		}

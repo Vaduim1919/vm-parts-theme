@@ -2343,6 +2343,20 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			return array();
 		}
 
+		$ck = $this->carCacheKey('eng.' . (int)$car['model_id'] . '.' . (int)$car['gen'] . '.' . (int)$car['year']);
+		$hit = $this->vmCacheGet($ck, 21600);
+
+		if (is_array($hit)) {
+			return $hit;
+		}
+
+		$res = $this->carEnginesBuild($car);
+		$this->vmCacheSet($ck, $res);
+
+		return $res;
+	}
+
+	private function carEnginesBuild($car) {
 		$ids = $this->genModelIds($car);
 		$now = (int)date('Y');
 		$cond = "e.model_id IN (" . implode(',', $ids) . ")";
@@ -2382,8 +2396,20 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$this->jsonOut($this->carEnginesData($car));
 	}
 
+	// changes when the supplier fitment is rebuilt, so cached car lists never outlive the data
+	private function fitStamp() {
+		static $st = null;
+
+		if ($st === null) {
+			$j = is_file(DIR_STORAGE . 'upload/vm_catalog/cars_rebuild.json') ? json_decode((string)@file_get_contents(DIR_STORAGE . 'upload/vm_catalog/cars_rebuild.json'), true) : null;
+			$st = is_array($j) && !empty($j['finished']) ? (string)(int)$j['finished'] : (is_array($j) ? 'run' . (int)floor(time() / 600) : '0');
+		}
+
+		return $st;
+	}
+
 	private function carCacheKey($what) {
-		return 'vm_car.' . $what . '.' . (int)$this->config->get('config_store_id');
+		return 'vm_car.' . $what . '.' . (int)$this->config->get('config_store_id') . '.' . $this->fitStamp();
 	}
 
 	private function carActiveJoin() {
@@ -2505,6 +2531,20 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			return array();
 		}
 
+		$ck = $this->carCacheKey('years2.' . $model_id . '.' . ($this->riaReady() ? 'r' : 'b'));
+		$hit = $this->vmCacheGet($ck, 21600);
+
+		if (is_array($hit)) {
+			return $hit;
+		}
+
+		$res = $this->carYearsBuild($model_id);
+		$this->vmCacheSet($ck, $res);
+
+		return $res;
+	}
+
+	private function carYearsBuild($model_id) {
 		$ids = $this->familyIds($model_id);
 		$query = $this->db->query("SELECT DISTINCT pv.year_from, pv.year_to FROM `" . DB_PREFIX . "vm_product_vehicle` pv " . $this->carActiveJoin() . " WHERE pv.model_id IN (" . implode(',', $ids) . ") AND pv.year_from > 0");
 

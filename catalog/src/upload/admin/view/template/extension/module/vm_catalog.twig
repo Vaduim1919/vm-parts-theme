@@ -154,7 +154,7 @@
     <div class="panel panel-default" id="vm-ria">
       <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-car"></i> Довідник авто AUTO.RIA (підбір за маркою)</h3></div>
       <div class="panel-body">
-        <p>Марки, моделі й покоління з офіційного API <a href="https://developers.ria.com" target="_blank" rel="noopener">developers.ria.com</a>. Запчастини прив'язуються до них за даними застосовності BM. Довідник оновлюється сам раз на місяць через cron; двигуни підтягуються, коли покупець їх відкриває. За умовами AUTO.RIA у футері сайту є посилання «Довідник авто: AUTO.RIA».</p>
+        <p>Марки, моделі й покоління з офіційного API <a href="https://developers.ria.com" target="_blank" rel="noopener">developers.ria.com</a>. Запчастини прив'язуються до них за даними застосовності BM. Довідник оновлюється сам раз на півроку через cron (безкоштовний пакет AUTO.RIA: до 30 запитів на годину). За умовами AUTO.RIA у футері сайту є посилання «Довідник авто: AUTO.RIA».</p>
         <div class="form-inline" style="margin-bottom:10px">
           <input type="password" id="vm-ria-key" class="form-control" style="width:360px" autocomplete="off" placeholder="{{ ria.has_key ? 'Ключ збережено — введіть новий, щоб замінити' : 'API-ключ developers.ria.com' }}">
           <button type="button" id="vm-ria-save" class="btn btn-default"><i class="fa fa-key"></i> Зберегти й перевірити ключ</button>
@@ -540,10 +540,11 @@
       $.ajax({ url: '{{ cars_rebuild_url|e('js') }}' + (first ? '&restart=1' : ''), dataType: 'json', timeout: 120000 }).done(function (j) {
         first = false;
         if (j.error) { m.attr('class', 'text-danger').text(j.error); b.prop('disabled', false); return; }
+        if (j.busy) { m.attr('class', 'text-info').text('Зараз перераховує cron (' + j.done + ' з ' + (j.total || '?') + '), чекаю…'); setTimeout(go, 15000); return; }
         m.attr('class', j.finished ? 'text-success' : 'text-info').text((j.finished ? 'Готово: ' : 'Перераховано: ') + j.done + ' з ' + (j.total || '?') + ' товарів');
         if (j.finished) { b.prop('disabled', false); return; }
-        go();
-      }).fail(function () { setTimeout(go, 3000); });
+        setTimeout(go, 1500);
+      }).fail(function () { setTimeout(go, 10000); });
     })();
   });
 

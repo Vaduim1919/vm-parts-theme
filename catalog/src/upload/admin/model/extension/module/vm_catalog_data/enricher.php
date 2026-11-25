@@ -472,10 +472,16 @@ class VmCatalogEnricher {
 
 	private $engines = array();
 
+	const MAX_ENGINE_LINKS = 1500; // universal parts (bulbs, wipers) list thousands of engines: keep it bounded
+
 	private function saveCars($product_id, $cars) {
-		$n = 0;
-		$this->db->query("DELETE FROM `" . DB_PREFIX . "vm_product_vehicle` WHERE product_id = '" . (int)$product_id . "' AND source = 'bm'");
-		$this->db->query("DELETE FROM `" . DB_PREFIX . "vm_product_engine` WHERE product_id = '" . (int)$product_id . "'");
+		$p = DB_PREFIX;
+		$product_id = (int)$product_id;
+		$this->db->query("DELETE FROM `{$p}vm_product_vehicle` WHERE product_id = '" . $product_id . "' AND source = 'bm'");
+		$this->db->query("DELETE FROM `{$p}vm_product_engine` WHERE product_id = '" . $product_id . "'");
+
+		$pv = array();   // model_id => array(yf, yt)
+		$links = array();
 
 		foreach ((array)$cars as $car) {
 			if (!is_array($car)) {
@@ -489,14 +495,10 @@ class VmCatalogEnricher {
 				continue;
 			}
 
-			$models = isset($car['models']) && is_array($car['models']) ? $car['models'] : array();
-
-			foreach ($models as $m) {
+			foreach ((isset($car['models']) && is_array($car['models']) ? $car['models'] : array()) as $m) {
 				$raw = is_array($m) ? $m : array();
 				$name = self::str(isset($raw['model']) ? $raw['model'] : $m);
 				list($name, $yf, $yt) = self::splitYears($name, isset($raw['model']) && is_array($raw['model']) ? $raw['model'] : $raw);
-
-				// the model has no years of its own: take them from its engines
 				$engines = array();
 
 				foreach ((isset($raw['engines']) && is_array($raw['engines']) ? $raw['engines'] : array()) as $e) {
@@ -525,22 +527,47 @@ class VmCatalogEnricher {
 
 				$model_id = $this->modelId($make_id, $name);
 
-				if ($model_id) {
-					$this->db->query("INSERT INTO `" . DB_PREFIX . "vm_product_vehicle` SET product_id = '" . (int)$product_id . "', model_id = '" . $model_id . "', year_from = '" . (int)$yf . "', year_to = '" . (int)$yt . "', source = 'bm' ON DUPLICATE KEY UPDATE year_to = IF(source = 'bm' OR year_from = 0, VALUES(year_to), year_to), year_from = IF(source = 'bm' OR year_from = 0, VALUES(year_from), year_from)");
-					$n++;
+				if (!$model_id) {
+					continue;
+				}
 
-					foreach ($engines as $pe) {
-						$eid = $this->engineId($model_id, $pe[0], $pe[1], $pe[2]);
+				$pv[$model_id] = array((int)$yf, (int)$yt);
 
-						if ($eid) {
-							$this->db->query("INSERT IGNORE INTO `" . DB_PREFIX . "vm_product_engine` SET product_id = '" . (int)$product_id . "', engine_id = '" . $eid . "'");
-						}
+				foreach ($engines as $pe) {
+					if (count($links) >= self::MAX_ENGINE_LINKS) {
+						break;
+					}
+
+					$eid = $this->engineId($model_id, $pe[0], $pe[1], $pe[2]);
+
+					if ($eid) {
+						$links[$eid] = true;
 					}
 				}
 			}
 		}
 
-		return $n;
+		// one statement per 400 rows instead of one per row
+		foreach (array_chunk($pv, 400, true) as $chunk) {
+			$vals = array();
+
+			foreach ($chunk as $model_id => $y) {
+				$vals[] = "('" . $product_id . "','" . (int)$model_id . "','" . $y[0] . "','" . $y[1] . "','bm')";
+			}
+
+			$this->db->query("INSERT INTO `{$p}vm_product_vehicle` (product_id, model_id, year_from, year_to, source) VALUES " . implode(',', $vals) . "
+				ON DUPLICATE KEY UPDATE year_to = IF(source = 'bm' OR year_from = 0, VALUES(year_to), year_to), year_from = IF(source = 'bm' OR year_from = 0, VALUES(year_from), year_from)");
+		}
+
+		foreach (array_chunk(array_keys($links), 500) as $chunk) {
+			$this->db->query("INSERT IGNORE INTO `{$p}vm_product_engine` (product_id, engine_id) VALUES ('" . $product_id . "','" . implode("'),('" . $product_id . "','", array_map('intval', $chunk)) . "')");
+		}
+
+		if (count($this->engines) > 50000) {
+			$this->engines = array(); // keep memory bounded on long runs
+		}
+
+		return count($pv);
 	}
 
 	// re-read the supplier fitment already stored for enriched products (no API calls): years from engines,
@@ -555,11 +582,29 @@ class VmCatalogEnricher {
 			return $st;
 		}
 
-		$deadline = microtime(true) + max(3, $seconds);
-		$total = (int)$this->db->query("SELECT COUNT(*) AS n FROM `{$p}vm_catalog_enrich` WHERE cars > 0")->row['n'];
+		if ($seconds <= 0) {
+			return $st; // status only
+		}
+
+		// never two rebuilds at once (cron + admin button)
+		$lock = @fopen(DIR_STORAGE . 'upload/vm_catalog/cars_rebuild.lock', 'c');
+
+		if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
+			$st['busy'] = 1;
+
+			return $st;
+		}
+
+		$deadline = microtime(true) + max(3, min(25, $seconds));
+
+		if (empty($st['total'])) {
+			$st['total'] = (int)$this->db->query("SELECT COUNT(*) AS n FROM `{$p}vm_catalog_enrich` WHERE cars > 0")->row['n'];
+		}
+
+		$total = $st['total'];
 
 		while (microtime(true) < $deadline) {
-			$rows = $this->db->query("SELECT product_id, cars_json FROM `{$p}vm_catalog_enrich` WHERE cars > 0 AND product_id > '" . (int)$st['pos'] . "' ORDER BY product_id LIMIT 100")->rows;
+			$rows = $this->db->query("SELECT product_id, cars_json FROM `{$p}vm_catalog_enrich` WHERE cars > 0 AND product_id > '" . (int)$st['pos'] . "' ORDER BY product_id LIMIT 20")->rows;
 
 			if (!$rows) {
 				$st['finished'] = time();
@@ -575,11 +620,19 @@ class VmCatalogEnricher {
 
 				$st['pos'] = (int)$r['product_id'];
 				$st['done']++;
+
+				if (microtime(true) >= $deadline) {
+					break 2;
+				}
 			}
+
+			usleep(50000); // let other requests breathe
 		}
 
 		$st['total'] = $total;
 		@file_put_contents($file, json_encode($st));
+		flock($lock, LOCK_UN);
+		fclose($lock);
 
 		return $st;
 	}
