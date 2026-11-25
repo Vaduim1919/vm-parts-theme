@@ -196,6 +196,8 @@ class VmCatalogEnricher {
 		curl_setopt_array($ch, array(
 			CURLOPT_FILE           => $fh,
 			CURLOPT_FOLLOWLOCATION => true,
+			CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
+			CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
 			CURLOPT_MAXREDIRS      => 3,
 			CURLOPT_CONNECTTIMEOUT => 10,
 			CURLOPT_TIMEOUT        => 30,
@@ -844,7 +846,7 @@ class VmCatalogEnricher {
 
 		// supplier description into an empty product description
 		if (!empty($p['description']) && is_string($p['description']) && trim(strip_tags($p['description'])) !== '') {
-			$this->db->query("UPDATE `" . DB_PREFIX . "product_description` SET description = '" . $this->db->escape(htmlspecialchars(nl2br(trim(strip_tags($p['description'], '<br><p><ul><li><b><strong>'))), ENT_COMPAT, 'UTF-8')) . "' WHERE product_id = '" . (int)$product_id . "' AND description = ''");
+			$this->db->query("UPDATE `" . DB_PREFIX . "product_description` SET description = '" . $this->db->escape(htmlspecialchars(nl2br(trim(preg_replace('#<(/?)(br|p|ul|li|b|strong)\b[^>]*>#i', '<$1$2>', strip_tags($p['description'], '<br><p><ul><li><b><strong>')))), ENT_COMPAT, 'UTF-8')) . "' WHERE product_id = '" . (int)$product_id . "' AND description = ''");
 		}
 
 		if (!empty($p['weight']) && (float)$p['weight'] > 0) {

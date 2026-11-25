@@ -314,7 +314,7 @@ class VmCatalogYml {
 
 			// description only where the shop has none, and only if it says more than the name
 			if ($o['desc'] !== '' && mb_strlen($o['desc']) > 25 && trim($o['desc'], '_ ') !== trim($o['name'], '_ ')) {
-				$html = htmlspecialchars(nl2br(trim(strip_tags($o['desc'], '<br><p><ul><li><b><strong>'))), ENT_COMPAT, 'UTF-8');
+				$html = htmlspecialchars(nl2br(trim(preg_replace('#<(/?)(br|p|ul|li|b|strong)\b[^>]*>#i', '<$1$2>', strip_tags($o['desc'], '<br><p><ul><li><b><strong>')))), ENT_COMPAT, 'UTF-8');
 
 				foreach ($langs as $l) {
 					$this->db->query("UPDATE `{$p}product_description` SET description = '" . $this->db->escape($html) . "' WHERE product_id = '" . $pid . "' AND language_id = '" . (int)$l['language_id'] . "' AND description = ''");
@@ -518,6 +518,8 @@ class VmCatalogYml {
 		curl_setopt_array($ch, array(
 			CURLOPT_FILE           => $fh,
 			CURLOPT_FOLLOWLOCATION => true,
+			CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
+			CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
 			CURLOPT_MAXREDIRS      => 3,
 			CURLOPT_CONNECTTIMEOUT => 10,
 			CURLOPT_TIMEOUT        => 30,

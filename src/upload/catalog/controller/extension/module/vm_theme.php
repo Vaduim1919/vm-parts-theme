@@ -1263,19 +1263,19 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			// exact article first, then article prefix
 			if ($this->hasTable('vm_catalog_item')) {
 				foreach ($this->db->query("SELECT i.product_id, i.art_key = '" . $this->db->escape($key) . "' AS exact FROM `{$p}vm_catalog_item` i INNER JOIN `{$p}product` p ON (p.product_id = i.product_id)
-					WHERE i.art_key LIKE '" . $this->db->escape($key) . "%'" . $active . " ORDER BY exact DESC, p.quantity > 0 DESC, LENGTH(i.art_key) ASC LIMIT 8")->rows as $r) {
+					WHERE i.art_key LIKE '" . $this->db->escape(addcslashes($key, '%_\\')) . "%'" . $active . " ORDER BY exact DESC, p.quantity > 0 DESC, LENGTH(i.art_key) ASC LIMIT 8")->rows as $r) {
 					$ids[(int)$r['product_id']] = true;
 				}
 			}
 
 			if (count($ids) < 8) {
-				foreach ($this->db->query("SELECT p.product_id FROM `{$p}product` p WHERE (p.model LIKE '" . $this->db->escape($q) . "%' OR p.sku = '" . $this->db->escape($q) . "')" . $active . " ORDER BY p.quantity > 0 DESC LIMIT 8")->rows as $r) {
+				foreach ($this->db->query("SELECT p.product_id FROM `{$p}product` p WHERE (p.model LIKE '" . $this->db->escape(addcslashes($q, '%_\\')) . "%' OR p.sku = '" . $this->db->escape($q) . "')" . $active . " ORDER BY p.quantity > 0 DESC LIMIT 8")->rows as $r) {
 					$ids[(int)$r['product_id']] = true;
 				}
 			}
 
 			if (count($ids) < 8 && mb_strlen($key) >= 4 && $this->hasTable('vm_catalog_oe')) {
-				foreach ($this->db->query("SELECT o.product_id, o.oe FROM `{$p}vm_catalog_oe` o INNER JOIN `{$p}product` p ON (p.product_id = o.product_id) WHERE o.oe_key LIKE '" . $this->db->escape($key) . "%'" . $active . " ORDER BY p.quantity > 0 DESC LIMIT 8")->rows as $r) {
+				foreach ($this->db->query("SELECT o.product_id, o.oe FROM `{$p}vm_catalog_oe` o INNER JOIN `{$p}product` p ON (p.product_id = o.product_id) WHERE o.oe_key LIKE '" . $this->db->escape(addcslashes($key, '%_\\')) . "%'" . $active . " ORDER BY p.quantity > 0 DESC LIMIT 8")->rows as $r) {
 					if (!isset($ids[(int)$r['product_id']])) {
 						$ids[(int)$r['product_id']] = true;
 						$why[(int)$r['product_id']] = 'OE ' . $r['oe'];
