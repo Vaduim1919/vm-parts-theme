@@ -1,7 +1,7 @@
 {
-  "version": "1.7.2",
+  "version": "1.7.3",
   "date": "2026-11-25",
-  "notes": "Безпека: у живому пошуку символи % і _ більше не працюють як шаблон (захист від перебору й навантаження на базу)",
-  "zip": "releases/vm_parts-1.7.2.ocmod.zip",
-  "sha256": "a1974c1128ebcb68cc076d866e1bd9039eb9d516fdb690397927919cf040b041"
+  "notes": "Безпека: cookie сесії OpenCart (OCSESSID) тепер з HttpOnly і Secure — шкідливий скрипт не зможе викрасти сесію покупця чи адміністратора",
+  "zip": "releases/vm_parts-1.7.3.ocmod.zip",
+  "sha256": "aea294189da7da57e8d0db9c3d92bb3aed5c1f04be4b9bc4956cbd5ac2987ddb"
 }

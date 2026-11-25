@@ -409,6 +409,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$this->load->model('setting/event');
 		$this->model_setting_event->deleteEventByCode('vm_theme');
 		$this->model_setting_event->addEvent('vm_theme', 'catalog/view/*/before', 'extension/module/vm_theme/view', 1, 501);
+		$this->model_setting_event->addEvent('vm_theme', 'catalog/controller/*/before', 'extension/module/vm_theme/secure', 1, 0);
 
 		if (!$this->config->has('module_vm_theme_update_url')) {
 			$this->saveValue('module_vm_theme_update_url', self::DEFAULT_UPDATE_URL);
@@ -552,6 +553,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$this->model_setting_event->deleteEventByCode('vm_theme');
 		// 501: right after the core theme event (500), before the language event (998)
 		$this->model_setting_event->addEvent('vm_theme', 'catalog/view/*/before', 'extension/module/vm_theme/view', 1, 501);
+		$this->model_setting_event->addEvent('vm_theme', 'catalog/controller/*/before', 'extension/module/vm_theme/secure', 1, 0);
 
 		$head = '';
 		$seed = DIR_APPLICATION . 'controller/extension/module/vm_theme_head.txt';

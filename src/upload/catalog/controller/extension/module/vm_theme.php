@@ -137,6 +137,55 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 	// --------------------------------------------------------------- the view event
 
+	// Event catalog/controller/*/before (fires for the main route of every request, AJAX included).
+	// OpenCart 3 sets its session cookie with plain setcookie(): no HttpOnly or Secure, so a script injected
+	// into any page could read the session. Right before headers go out, add the flags. (No SameSite: payment
+	// gateways may return the buyer with a cross-site POST.)
+	public function secure(&$route = '', &$args = array()) {
+		static $done = false;
+
+		if ($done || headers_sent() || !function_exists('header_register_callback')) {
+			return;
+		}
+
+		$done = true;
+		$name = (string)$this->config->get('session_name');
+		$name = $name !== '' ? $name : 'OCSESSID';
+		$https = $this->isSecure();
+
+		header_register_callback(function () use ($name, $https) {
+			$cookies = array();
+
+			foreach (headers_list() as $h) {
+				if (stripos($h, 'Set-Cookie:') === 0) {
+					$cookies[] = $h;
+				}
+			}
+
+			if (!$cookies) {
+				return;
+			}
+
+			header_remove('Set-Cookie');
+
+			foreach ($cookies as $h) {
+				$value = trim(substr($h, 11));
+
+				if (stripos($value, $name . '=') === 0 || stripos($value, 'PHPSESSID=') === 0) {
+					if (stripos($value, 'httponly') === false) {
+						$value .= '; HttpOnly';
+					}
+
+					if ($https && !preg_match('/;\s*secure\b/i', $value)) {
+						$value .= '; Secure';
+					}
+				}
+
+				header('Set-Cookie: ' . $value, false);
+			}
+		});
+	}
+
 	public function view(&$route, &$data, &$code) {
 		if (!$this->active()) {
 			return;
