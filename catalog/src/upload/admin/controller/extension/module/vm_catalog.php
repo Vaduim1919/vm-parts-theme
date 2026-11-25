@@ -175,6 +175,9 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		$data['yml_start_url'] = $this->ajaxUrl('ymlStart');
 		$data['yml_step_url'] = $this->ajaxUrl('ymlStep');
 		$data['yml_photos_url'] = $this->ajaxUrl('ymlPhotos');
+		$data['ria_step_url'] = $this->ajaxUrl('riaStep');
+		$data['ria_key_url'] = $this->ajaxUrl('riaKey');
+		$data['ria'] = $this->model_extension_module_vm_catalog->ria()->stats();
 		$data['yml_job'] = $this->model_extension_module_vm_catalog->yml()->getJob();
 		$data['yml_photo'] = $this->model_extension_module_vm_catalog->yml()->photoStats();
 		$data['yml_photos_max'] = max(1, min(6, (int)($this->config->get('module_vm_catalog_yml_photos') ?: 1)));
@@ -220,6 +223,7 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			// empty password field = keep the saved one
 			'module_vm_catalog_utr_password' => !empty($src['module_vm_catalog_utr_password']) ? $get('module_vm_catalog_utr_password') : (string)$this->config->get('module_vm_catalog_utr_password'),
 			'module_vm_catalog_bm_token'   => !empty($src['module_vm_catalog_bm_token']) ? trim($get('module_vm_catalog_bm_token')) : (string)$this->config->get('module_vm_catalog_bm_token'),
+			'module_vm_catalog_ria_key'    => !empty($src['module_vm_catalog_ria_key']) ? preg_replace('/[^A-Za-z0-9]/', '', $get('module_vm_catalog_ria_key')) : (string)$this->config->get('module_vm_catalog_ria_key'),
 			'module_vm_catalog_bm_photos'  => isset($src['module_vm_catalog_bm_photos']) && in_array($src['module_vm_catalog_bm_photos'], array('none', 'local', 'all'), true) ? $src['module_vm_catalog_bm_photos'] : ((string)$this->config->get('module_vm_catalog_bm_photos') ?: 'all'),
 			'module_vm_catalog_photos_v2'  => 1,
 			'module_vm_catalog_cron_key'   => $this->cronKey(),
@@ -521,6 +525,53 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		$y = $this->model_extension_module_vm_catalog->yml();
 		$run = $y->runPhotos(20, true); // the button skips the disk-full pause: space may have been freed
 		$this->json(array('run' => $run, 'stats' => $y->photoStats()));
+	}
+
+	// ---------------------------------------------------------------- AUTO.RIA car reference
+
+	public function riaKey() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if ($this->request->server['REQUEST_METHOD'] !== 'POST' || !$this->canModify()) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$key = isset($this->request->post['key']) ? preg_replace('/[^A-Za-z0-9]/', '', (string)$this->request->post['key']) : '';
+
+		if (strlen($key) < 20) {
+			return $this->json(array('error' => 'Ключ AUTO.RIA має бути рядком з ~40 латинських літер і цифр'));
+		}
+
+		$this->setValue('module_vm_catalog_ria_key', $key);
+		$r = $this->model_extension_module_vm_catalog->ria();
+		$test = $r->get('auto/categories/1/marks');
+
+		if ($test === null) {
+			return $this->json(array('error' => $r->error));
+		}
+
+		$this->json(array('ok' => 1, 'makes' => count($test), 'stats' => $r->stats()));
+	}
+
+	public function riaStep() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify()) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		$r = $this->model_extension_module_vm_catalog->ria();
+
+		$cur = $r->getJob();
+
+		if (!empty($this->request->get['restart']) && (!$cur || $cur['stage'] === 'done')) {
+			$r->start();
+		}
+
+		$job = $r->step(20);
+		$this->json(array('job' => array('stage' => $job['stage'], 'error' => $job['error'], 'paused' => !empty($job['paused']), 'waiting' => !empty($job['waiting'])), 'stats' => $r->stats()));
 	}
 
 	// ---------------------------------------------------------------- BM Parts as a supplier

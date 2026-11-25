@@ -53,6 +53,7 @@
   <div class="vm-footer-bottom">
     <div class="container vm-row">
       <span>{{ vm_name }} © {{ vm.year }}</span>
+      {% if vm_ria %}<span class="vm-footer-ria">{{ vm_t.text_car_ria }} <a href="https://auto.ria.com/uk/" target="_blank" rel="noopener">AUTO.RIA</a></span>{% endif %}
       <span>{{ vm_t.text_payments }}</span>
     </div>
   </div>

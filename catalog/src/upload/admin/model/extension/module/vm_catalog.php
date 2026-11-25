@@ -54,6 +54,17 @@ class ModelExtensionModuleVmCatalog extends Model {
 		}
 	}
 
+	public function ria() {
+		static $r = null;
+
+		if ($r === null) {
+			require_once self::dataDir() . 'ria.php';
+			$r = new VmCatalogRia($this->registry);
+		}
+
+		return $r;
+	}
+
 	public function yml() {
 		static $y = null;
 

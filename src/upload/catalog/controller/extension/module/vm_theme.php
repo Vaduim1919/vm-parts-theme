@@ -285,6 +285,8 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				$data['vm_address'] = nl2br($this->config->get('config_address'));
 				$data['vm_open'] = nl2br($this->config->get('config_open'));
 				$data['vm_name'] = $this->config->get('config_name');
+				// AUTO.RIA terms: a followable link to the project wherever its reference is used
+				$data['vm_ria'] = $this->vmTablesExist() && $this->riaReady();
 				break;
 			case 'product/product':
 				$this->productPage($data);
@@ -711,17 +713,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 	}
 
 	private function selectedCar() {
-		if (empty($this->request->cookie['vm_car'])) {
-			return false;
-		}
-
-		$parts = array_map('intval', explode('-', (string)$this->request->cookie['vm_car']));
-
-		if (empty($parts[1])) {
-			return false;
-		}
-
-		return array('model_id' => $parts[1], 'year' => isset($parts[2]) ? $parts[2] : 0);
+		return $this->garage();
 	}
 
 	private function enrichProducts($products) {
@@ -761,17 +753,11 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$car = $this->selectedCar();
 
 		if ($car && $this->vmTablesExist()) {
-			$year_sql = '';
-
-			if ($car['year']) {
-				$y = (int)$car['year'];
-				$year_sql = " AND (pv.year_from = 0 OR pv.year_from <= '" . $y . "') AND (pv.year_to = 0 OR pv.year_to >= '" . $y . "')";
-			}
 
 			$query = $this->db->query("SELECT pv.product_id, pv.year_from, pv.year_to, md.name AS model, mk.name AS make FROM `" . DB_PREFIX . "vm_product_vehicle` pv
 				LEFT JOIN `" . DB_PREFIX . "vm_model` md ON (md.model_id = pv.model_id)
 				LEFT JOIN `" . DB_PREFIX . "vm_make` mk ON (mk.make_id = md.make_id)
-				WHERE pv.model_id = '" . (int)$car['model_id'] . "' AND pv.product_id IN (" . $in . ")" . $year_sql);
+				WHERE " . $this->carCond($car) . " AND pv.product_id IN (" . $in . ")");
 
 			foreach ($query->rows as $row) {
 				$years = $row['year_from'] ? ' ' . $row['year_from'] . '–' . ($row['year_to'] ? $row['year_to'] : $this->texts()['text_now']) : '';
@@ -1453,13 +1439,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		}
 
 		if ($skip !== 'car' && $sel['car'] && ($g = $this->garage())) {
-			$cond = "pv.model_id = '" . (int)$g['model_id'] . "'";
-
-			if ($g['year']) {
-				$cond .= " AND (pv.year_from = 0 OR pv.year_from <= '" . (int)$g['year'] . "') AND (pv.year_to = 0 OR pv.year_to >= '" . (int)$g['year'] . "')";
-			}
-
-			$w[] = "p.product_id IN (SELECT pv.product_id FROM `{$p}vm_product_vehicle` pv WHERE " . $cond . ")";
+			$w[] = "p.product_id IN (SELECT pv.product_id FROM `{$p}vm_product_vehicle` pv WHERE " . $this->carCond($g) . ")";
 		}
 
 		if ($skip !== 'a') {
@@ -2172,6 +2152,150 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		return $out ? implode(' ', $out) : $base;
 	}
 
+	// ---------------- car reference (AUTO.RIA names + generations over the supplier fitment data), 1.8.0
+
+	// same rules as VmCatalogRia::familyKey(): "C-KLASSE (W204)" -> "c", "3 Series" -> "3", "GOLF IV (1J1)" -> "golf"
+	public static function familyKey($name) {
+		$fam = preg_replace('/[\s\-]*(class|klasse|series|serie|серія|клас)\b/iu', '', self::modelFamily($name));
+		$fam = mb_strtolower(trim($fam), 'UTF-8');
+		$fam = strtr($fam, array('š' => 's', 'ë' => 'e', 'é' => 'e', 'è' => 'e', 'ö' => 'o', 'ü' => 'u', 'ä' => 'a', 'ç' => 'c', 'ã' => 'a', 'á' => 'a', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n', 'ø' => 'o', 'å' => 'a', 'ž' => 'z', 'č' => 'c', 'ř' => 'r'));
+
+		return preg_replace('/[^a-z0-9а-яіїєґ]+/u', '', $fam);
+	}
+
+	private function riaReady() {
+		static $ok = null;
+
+		if ($ok === null) {
+			$ok = $this->hasTable('vm_ria_gen') && $this->hasTable('vm_ria_model') && $this->hasTable('vm_ria_make')
+				&& (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "vm_ria_gen`")->row['n'] > 0;
+		}
+
+		return $ok;
+	}
+
+	// all models of the same make and family that have fitment rows ("GOLF IV (1J1)", "GOLF V (1K1)", "Golf" ...)
+	private function familyIds($model_id) {
+		static $memo = array();
+		$model_id = (int)$model_id;
+
+		if (isset($memo[$model_id])) {
+			return $memo[$model_id];
+		}
+
+		$row = $this->db->query("SELECT make_id, name FROM `" . DB_PREFIX . "vm_model` WHERE model_id = '" . $model_id . "'")->row;
+
+		if (!$row) {
+			return $memo[$model_id] = array();
+		}
+
+		$key = self::familyKey($row['name']);
+		$ids = array();
+
+		foreach ($this->db->query("SELECT model_id, name FROM `" . DB_PREFIX . "vm_model` WHERE make_id = '" . (int)$row['make_id'] . "'")->rows as $m) {
+			if (self::familyKey($m['name']) === $key) {
+				$ids[] = (int)$m['model_id'];
+			}
+		}
+
+		return $memo[$model_id] = $ids ? $ids : array($model_id);
+	}
+
+	// generation number in a supplier model name: "OCTAVIA II (1Z3)" -> "II", "GOLF IV Variant (1J5)" -> "IV"; '' if none
+	private static function modelRoman($name) {
+		$base = trim(preg_replace('/\(.*$/u', '', (string)$name));
+
+		foreach (array_slice(preg_split('/\s+/u', $base), 1) as $tk) {
+			if (preg_match('/^(I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)$/', $tk)) {
+				return $tk;
+			}
+		}
+
+		return '';
+	}
+
+	// "III покоління/A7" -> "III"
+	private static function genRoman($name) {
+		return preg_match('/^\s*(I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)\b/u', (string)$name, $m) ? $m[1] : '';
+	}
+
+	private function riaModel($make_id, $fkey) {
+		static $memo = array();
+		$k = (int)$make_id . ':' . $fkey;
+
+		if (!array_key_exists($k, $memo)) {
+			$memo[$k] = $this->riaReady() ? $this->db->query("SELECT rm.ria_id, rm.name FROM `" . DB_PREFIX . "vm_ria_model` rm INNER JOIN `" . DB_PREFIX . "vm_ria_make` mk ON (mk.ria_id = rm.ria_make_id)
+				WHERE mk.make_id = '" . (int)$make_id . "' AND rm.fkey = '" . $this->db->escape($fkey) . "' ORDER BY rm.gens_at DESC LIMIT 1")->row : array();
+		}
+
+		return $memo[$k];
+	}
+
+	private function riaMakeName($make_id) {
+		static $memo = array();
+
+		if (!array_key_exists($make_id, $memo)) {
+			$memo[$make_id] = $this->riaReady() ? (string)($this->db->query("SELECT name FROM `" . DB_PREFIX . "vm_ria_make` WHERE make_id = '" . (int)$make_id . "' ORDER BY ria_id LIMIT 1")->row['name'] ?? '') : '';
+		}
+
+		return $memo[$make_id];
+	}
+
+	// "III покоління/A7 (FL)" -> "A7 (FL)", "IV покоління" -> "IV покоління"
+	private static function genShort($name) {
+		$name = trim((string)$name);
+		$pos = mb_strpos($name, '/');
+
+		return $pos !== false ? trim(mb_substr($name, $pos + 1)) : $name;
+	}
+
+	// SQL on vm_product_vehicle rows (alias pv) for a chosen car: family models + exact year, or a generation:
+	// the part's years must overlap the generation by at least 3 years (or the whole generation if shorter),
+	// so a part for the next generation that starts in the last year of this one is not shown.
+	private function carCond($car) {
+		$ids = !empty($car['model_ids']) ? $car['model_ids'] : array((int)$car['model_id']);
+		$sql = "pv.model_id IN (" . implode(',', array_map('intval', $ids)) . ")";
+		$now = (int)date('Y');
+
+		if (!empty($car['year'])) {
+			$y = (int)$car['year'];
+			$sql .= " AND (pv.year_from = 0 OR pv.year_from <= '" . $y . "') AND (pv.year_to = 0 OR pv.year_to >= '" . $y . "')";
+		} elseif (!empty($car['gen_yf'])) {
+			$gf = (int)$car['gen_yf'];
+			$gt = !empty($car['gen_yt']) ? (int)$car['gen_yt'] : $now;
+			$need = max(1, min(3, $gt - $gf + 1));
+			$overlap = "(LEAST(IF(pv.year_to = 0, " . $now . ", pv.year_to), " . $gt . ") - GREATEST(pv.year_from, " . $gf . ") + 1)";
+			$roman = !empty($car['gen_roman']) ? $car['gen_roman'] : '';
+			$same = $plain = array();
+
+			// supplier models that carry a generation number are matched by that number (OCTAVIA II <-> II покоління),
+			// the rest by years
+			foreach ($ids as $id) {
+				$r = $roman !== '' && isset($car['model_names'][$id]) ? self::modelRoman($car['model_names'][$id]) : '';
+
+				if ($r === '') {
+					$plain[] = (int)$id;
+				} elseif ($r === $roman) {
+					$same[] = (int)$id;
+				}
+			}
+
+			$or = array();
+
+			if ($same) {
+				$or[] = "(pv.model_id IN (" . implode(',', $same) . ") AND (pv.year_from = 0 OR " . $overlap . " >= 1))";
+			}
+
+			if ($plain) {
+				$or[] = "(pv.model_id IN (" . implode(',', $plain) . ") AND (pv.year_from = 0 OR " . $overlap . " >= " . $need . "))";
+			}
+
+			$sql = $or ? '(' . implode(' OR ', $or) . ')' : '0';
+		}
+
+		return $sql;
+	}
+
 	private function carCacheKey($what) {
 		return 'vm_car.' . $what . '.' . (int)$this->config->get('config_store_id');
 	}
@@ -2186,7 +2310,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			return array();
 		}
 
-		$data = $this->vmCacheGet($this->carCacheKey('makes'));
+		$data = $this->vmCacheGet($this->carCacheKey('makes2.' . ($this->riaReady() ? 'r' : 'b')));
 
 		if (is_array($data)) {
 			return $data;
@@ -2203,14 +2327,15 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		foreach ($rows as $r) {
 			$key = mb_strtolower($r['name'], 'UTF-8');
 			$pop = array_search($key, self::$popular);
-			$data[] = array('id' => (int)$r['make_id'], 'name' => self::prettyName($r['name']), 'count' => (int)$r['total'], 'pop' => $pop === false ? 0 : 100 - $pop);
+			$ria = $this->riaMakeName((int)$r['make_id']);
+			$data[] = array('id' => (int)$r['make_id'], 'name' => $ria !== '' ? $ria : self::prettyName($r['name']), 'count' => (int)$r['total'], 'pop' => $pop === false ? 0 : 100 - $pop);
 		}
 
 		usort($data, function ($a, $b) {
 			return strnatcasecmp($a['name'], $b['name']);
 		});
 
-		$this->vmCacheSet($this->carCacheKey('makes'), $data);
+		$this->vmCacheSet($this->carCacheKey('makes2.' . ($this->riaReady() ? 'r' : 'b')), $data);
 
 		return $data;
 	}
@@ -2222,38 +2347,67 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			return array();
 		}
 
-		$data = $this->vmCacheGet($this->carCacheKey('models.' . $make_id));
+		$ckey = $this->carCacheKey('models2.' . $make_id . '.' . ($this->riaReady() ? 'r' : 'b'));
+		$data = $this->vmCacheGet($ckey);
 
 		if (is_array($data)) {
 			return $data;
 		}
 
-		$rows = $this->db->query("SELECT md.model_id, md.name, MIN(NULLIF(pv.year_from, 0)) AS yf, MAX(pv.year_to) AS yt, SUM(pv.year_from > 0 AND pv.year_to = 0) AS open_end, COUNT(DISTINCT pv.product_id) AS total
+		$rows = $this->db->query("SELECT md.model_id, md.name, pv.product_id, pv.year_from, pv.year_to
 			FROM `" . DB_PREFIX . "vm_product_vehicle` pv " . $this->carActiveJoin() . "
 			INNER JOIN `" . DB_PREFIX . "vm_model` md ON (md.model_id = pv.model_id)
-			WHERE md.make_id = '" . $make_id . "' GROUP BY md.model_id")->rows;
+			WHERE md.make_id = '" . $make_id . "'")->rows;
+
+		$fam = array();
+
+		foreach ($rows as $r) {
+			$k = self::familyKey($r['name']);
+
+			if (!isset($fam[$k])) {
+				$fam[$k] = array('id' => (int)$r['model_id'], 'names' => array(), 'products' => array(), 'yf' => 0, 'yt' => 0, 'open' => false);
+			}
+
+			$f = &$fam[$k];
+			$f['id'] = min($f['id'], (int)$r['model_id']);
+			$f['names'][$r['name']] = true;
+			$f['products'][(int)$r['product_id']] = true;
+
+			if ((int)$r['year_from']) {
+				$f['yf'] = $f['yf'] ? min($f['yf'], (int)$r['year_from']) : (int)$r['year_from'];
+				$f['open'] = $f['open'] || !(int)$r['year_to'];
+				$f['yt'] = max($f['yt'], (int)$r['year_to']);
+			}
+
+			unset($f);
+		}
 
 		$now = $this->texts()['text_now'];
 		$data = array();
 
-		foreach ($rows as $r) {
-			$years = '';
+		foreach ($fam as $k => $f) {
+			$ria = $this->riaModel($make_id, $k);
 
-			if ($r['yf']) {
-				$years = $r['yf'] . '–' . (($r['open_end'] || !$r['yt']) ? $now : $r['yt']);
+			if ($ria) {
+				$name = $ria['name'];
+			} else {
+				// no reference name: the shortest supplier name of the family, without the body code
+				$names = array_keys($f['names']);
+				usort($names, function ($a, $b) {
+					return mb_strlen($a) - mb_strlen($b);
+				});
+				$name = self::prettyName(self::modelFamily($names[0]));
 			}
 
-			$name = self::prettyName($r['name']);
-			$data[] = array('id' => (int)$r['model_id'], 'name' => $name, 'family' => self::prettyName(self::modelFamily($r['name'])), 'years' => $years, 'yf' => (int)$r['yf'], 'count' => (int)$r['total']);
+			$years = $f['yf'] ? $f['yf'] . '–' . (($f['open'] || !$f['yt']) ? $now : $f['yt']) : '';
+			$data[] = array('id' => $f['id'], 'name' => $name, 'family' => $name, 'years' => $years, 'yf' => $f['yf'], 'count' => count($f['products']));
 		}
 
 		usort($data, function ($a, $b) {
-			$c = strnatcasecmp($a['family'], $b['family']);
-
-			return $c ? $c : ($a['yf'] - $b['yf'] ? $a['yf'] - $b['yf'] : strnatcasecmp($a['name'], $b['name']));
+			return strnatcasecmp($a['name'], $b['name']);
 		});
 
-		$this->vmCacheSet($this->carCacheKey('models.' . $make_id), $data);
+		$this->vmCacheSet($ckey, $data);
 
 		return $data;
 	}
@@ -2265,7 +2419,8 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			return array();
 		}
 
-		$query = $this->db->query("SELECT DISTINCT pv.year_from, pv.year_to FROM `" . DB_PREFIX . "vm_product_vehicle` pv " . $this->carActiveJoin() . " WHERE pv.model_id = '" . $model_id . "' AND pv.year_from > 0");
+		$ids = $this->familyIds($model_id);
+		$query = $this->db->query("SELECT DISTINCT pv.year_from, pv.year_to FROM `" . DB_PREFIX . "vm_product_vehicle` pv " . $this->carActiveJoin() . " WHERE pv.model_id IN (" . implode(',', $ids) . ") AND pv.year_from > 0");
 
 		$current = (int)date('Y');
 		$years = array();
@@ -2280,8 +2435,55 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		}
 
 		krsort($years);
+		$years = array_values($years);
 
-		return array_values($years);
+		// with the AUTO.RIA reference: the years grouped by generation
+		$row = $this->db->query("SELECT make_id, name FROM `" . DB_PREFIX . "vm_model` WHERE model_id = '" . $model_id . "'")->row;
+		$ria = $row ? $this->riaModel($row['make_id'], self::familyKey($row['name'])) : array();
+
+		if (!$ria) {
+			return $years;
+		}
+
+		$gens = array();
+		$used = array();
+		$names = array();
+
+		foreach ($this->db->query("SELECT model_id, name FROM `" . DB_PREFIX . "vm_model` WHERE model_id IN (" . implode(',', $ids) . ")")->rows as $mn) {
+			$names[(int)$mn['model_id']] = $mn['name'];
+		}
+
+		foreach ($this->db->query("SELECT gen_id, name, year_from, year_to FROM `" . DB_PREFIX . "vm_ria_gen` WHERE ria_model_id = '" . (int)$ria['ria_id'] . "' AND year_from > 0 ORDER BY year_from DESC, gen_id")->rows as $g) {
+			$gf = (int)$g['year_from'];
+			$gt = (int)$g['year_to'] ? (int)$g['year_to'] : $current;
+			$list = array();
+
+			foreach ($years as $y) {
+				if ($y >= $gf && $y <= $gt) {
+					$list[] = $y;
+					$used[$y] = true;
+				}
+			}
+
+			if ($list) {
+				$car = array('model_ids' => $ids, 'model_names' => $names, 'gen_yf' => $gf, 'gen_yt' => (int)$g['year_to'], 'gen_roman' => self::genRoman($g['name']));
+				$n = (int)$this->db->query("SELECT COUNT(DISTINCT pv.product_id) AS n FROM `" . DB_PREFIX . "vm_product_vehicle` pv " . $this->carActiveJoin() . " WHERE " . $this->carCond($car))->row['n'];
+
+				if ($n) {
+					$gens[] = array('id' => (int)$g['gen_id'], 'name' => self::genShort($g['name']), 'full' => $g['name'], 'yf' => $gf, 'yt' => (int)$g['year_to'], 'years' => $list, 'n' => $n);
+				}
+			}
+		}
+
+		if (!$gens) {
+			return $years;
+		}
+
+		$rest = array_values(array_filter($years, function ($y) use ($used) {
+			return !isset($used[$y]);
+		}));
+
+		return array('gens' => $gens, 'rest' => $rest);
 	}
 
 	private function jsonOut($data) {
@@ -2304,20 +2506,21 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 	// cookie "make-model-year"; make only is allowed for the results page, the garage needs a model
 	private function carCookie() {
-		$c = array('make_id' => 0, 'model_id' => 0, 'year' => 0);
+		$c = array('make_id' => 0, 'model_id' => 0, 'year' => 0, 'gen' => 0);
 
 		if (!empty($this->request->cookie['vm_car'])) {
 			$parts = array_map('intval', explode('-', (string)$this->request->cookie['vm_car']));
 			$c['make_id'] = isset($parts[0]) ? $parts[0] : 0;
 			$c['model_id'] = isset($parts[1]) ? $parts[1] : 0;
 			$c['year'] = isset($parts[2]) ? $parts[2] : 0;
+			$c['gen'] = isset($parts[3]) ? $parts[3] : 0;
 		}
 
 		return $c;
 	}
 
 	// selection + human names, or false
-	private function carInfo($make_id, $model_id = 0, $year = 0) {
+	private function carInfo($make_id, $model_id = 0, $year = 0, $gen = 0) {
 		if (!$make_id || !$this->vmTablesExist()) {
 			return false;
 		}
@@ -2328,24 +2531,49 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			return false;
 		}
 
-		$info = array('make_id' => (int)$make_id, 'model_id' => 0, 'year' => 0, 'make' => self::prettyName($make['name']), 'model' => '', 'label' => self::prettyName($make['name']));
+		$make_name = $this->riaMakeName((int)$make_id);
+		$make_name = $make_name !== '' ? $make_name : self::prettyName($make['name']);
+		$info = array('make_id' => (int)$make_id, 'model_id' => 0, 'model_ids' => array(), 'year' => 0, 'gen' => 0, 'gen_yf' => 0, 'gen_yt' => 0, 'gen_name' => '', 'make' => $make_name, 'model' => '', 'label' => $make_name);
 
 		if ($model_id) {
 			$model = $this->db->query("SELECT model_id, name FROM `" . DB_PREFIX . "vm_model` WHERE model_id = '" . (int)$model_id . "' AND make_id = '" . (int)$make_id . "'")->row;
 
 			if ($model) {
+				$fkey = self::familyKey($model['name']);
+				$ria = $this->riaModel($make_id, $fkey);
 				$info['model_id'] = (int)$model_id;
-				$info['model'] = self::prettyName($model['name']);
+				$info['model_ids'] = $this->familyIds($model_id);
+				$info['model_names'] = array();
+
+				foreach ($this->db->query("SELECT model_id, name FROM `" . DB_PREFIX . "vm_model` WHERE model_id IN (" . implode(',', $info['model_ids']) . ")")->rows as $mn) {
+					$info['model_names'][(int)$mn['model_id']] = $mn['name'];
+				}
+				$info['model'] = $ria ? $ria['name'] : self::prettyName(self::modelFamily($model['name']));
 				$info['label'] .= ' ' . $info['model'];
+
+				if ($gen && $ria) {
+					$g = $this->db->query("SELECT gen_id, name, year_from, year_to FROM `" . DB_PREFIX . "vm_ria_gen` WHERE gen_id = '" . (int)$gen . "' AND ria_model_id = '" . (int)$ria['ria_id'] . "'")->row;
+
+					if ($g) {
+						$info['gen'] = (int)$g['gen_id'];
+						$info['gen_yf'] = (int)$g['year_from'];
+						$info['gen_yt'] = (int)$g['year_to'];
+						$info['gen_name'] = self::genShort($g['name']);
+						$info['gen_roman'] = self::genRoman($g['name']);
+						$info['label'] .= ' ' . $info['gen_name'];
+					}
+				}
 
 				if ($year >= 1950 && $year <= (int)date('Y') + 1) {
 					$info['year'] = (int)$year;
 					$info['label'] .= ', ' . (int)$year;
+				} elseif ($info['gen']) {
+					$info['label'] .= ' (' . $info['gen_yf'] . '–' . ($info['gen_yt'] ? $info['gen_yt'] : $this->texts()['text_now']) . ')';
 				}
 			}
 		}
 
-		$info['href'] = $this->url->link('extension/module/vm_theme/car', 'make_id=' . $info['make_id'] . ($info['model_id'] ? '&model_id=' . $info['model_id'] : '') . ($info['year'] ? '&year=' . $info['year'] : ''));
+		$info['href'] = $this->url->link('extension/module/vm_theme/car', 'make_id=' . $info['make_id'] . ($info['model_id'] ? '&model_id=' . $info['model_id'] : '') . ($info['gen'] ? '&gen=' . $info['gen'] : '') . ($info['year'] ? '&year=' . $info['year'] : ''));
 
 		return $info;
 	}
@@ -2355,7 +2583,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		if ($g === null) {
 			$c = $this->carCookie();
-			$g = ($c['make_id'] && $c['model_id']) ? $this->carInfo($c['make_id'], $c['model_id'], $c['year']) : false;
+			$g = ($c['make_id'] && $c['model_id']) ? $this->carInfo($c['make_id'], $c['model_id'], $c['year'], $c['gen']) : false;
 
 			if ($g && !$g['model_id']) {
 				$g = false;
@@ -2381,7 +2609,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$data['vm_garage'] = $garage;
 		$data['vm_carbar'] = array(
 			'cfg' => json_encode(array(
-				'sel'      => array('make_id' => (int)$sel['make_id'], 'model_id' => (int)$sel['model_id'], 'year' => (int)$sel['year'], 'make' => isset($sel['make']) ? $sel['make'] : '', 'model' => isset($sel['model']) ? $sel['model'] : ''),
+				'sel'      => array('make_id' => (int)$sel['make_id'], 'model_id' => (int)$sel['model_id'], 'year' => (int)$sel['year'], 'gen' => isset($sel['gen']) ? (int)$sel['gen'] : 0, 'gen_name' => isset($sel['gen_name']) ? $sel['gen_name'] : '', 'make' => isset($sel['make']) ? $sel['make'] : '', 'model' => isset($sel['model']) ? $sel['model'] : ''),
 				'garage'   => $garage ? $garage['label'] : '',
 				'urls'     => array(
 					'makes'   => html_entity_decode($this->url->link('extension/module/vm_theme/carMakes'), ENT_QUOTES, 'UTF-8'),
@@ -2392,7 +2620,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				),
 				't' => self::decodeAll(array(
 					'make' => $t['text_car_make'], 'model' => $t['text_car_model'], 'year' => $t['text_car_year'],
-					'all_years' => $t['text_car_all_years'], 'all_models' => $t['text_car_all_models'], 'popular' => $t['text_car_popular'], 'all_makes' => $t['text_car_all_makes'],
+					'now' => $t['text_now'], 'all_years' => $t['text_car_all_years'], 'all_gen' => $t['text_car_all_gen'], 'other_years' => $t['text_car_other_years'], 'all_models' => $t['text_car_all_models'], 'popular' => $t['text_car_popular'], 'all_makes' => $t['text_car_all_makes'],
 					'search_make' => $t['text_car_search_make'], 'search_model' => $t['text_car_search_model'], 'nothing' => $t['text_car_nothing'],
 					'loading' => $t['text_car_loading'], 'show' => $t['text_car_show'], 'show_n' => $t['text_car_show_n'], 'parts' => $t['text_car_parts'], 'pick_make' => $t['text_car_pick_make'], 'back' => $t['text_car_back'], 'title' => $t['text_car_title'], 'forget' => $t['text_car_forget']
 				))
@@ -2429,8 +2657,9 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$model_id = isset($this->request->get['model_id']) ? (int)$this->request->get['model_id'] : 0;
 		$year = isset($this->request->get['year']) ? (int)$this->request->get['year'] : 0;
 		$cat = isset($this->request->get['cat']) ? (int)$this->request->get['cat'] : 0;
+		$gen = isset($this->request->get['gen']) ? (int)$this->request->get['gen'] : 0;
 
-		$info = $this->carInfo($make_id, $model_id, $year);
+		$info = $this->carInfo($make_id, $model_id, $year, $gen);
 
 		if (!$info) {
 			$this->response->redirect($this->url->link('common/home'));
@@ -2442,8 +2671,9 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$model_id = $info['model_id'];
 		$year = $info['year'];
 
-		setcookie('vm_car', $make_id . '-' . $model_id . '-' . $year, time() + 86400 * 180, '/');
-		$this->request->cookie['vm_car'] = $make_id . '-' . $model_id . '-' . $year;
+		$gen = $info['gen'];
+		setcookie('vm_car', $make_id . '-' . $model_id . '-' . $year . '-' . $gen, time() + 86400 * 180, '/');
+		$this->request->cookie['vm_car'] = $make_id . '-' . $model_id . '-' . $year . '-' . $gen;
 
 		$this->load->language('product/category');
 		$this->load->model('catalog/product');
@@ -2454,17 +2684,13 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$theme = $this->config->get('config_theme');
 		$p = DB_PREFIX;
 
-		$where = $model_id ? "pv.model_id = '" . $model_id . "'" : "pv.model_id IN (SELECT model_id FROM `{$p}vm_model` WHERE make_id = '" . $make_id . "')";
-
-		if ($year) {
-			$where .= " AND (pv.year_from = 0 OR pv.year_from <= '" . $year . "') AND (pv.year_to = 0 OR pv.year_to >= '" . $year . "')";
-		}
+		$where = $model_id ? $this->carCond($info) : "pv.model_id IN (SELECT model_id FROM `{$p}vm_model` WHERE make_id = '" . $make_id . "')";
 
 		$from = " FROM `{$p}vm_product_vehicle` pv " . $this->carActiveJoin() . " LEFT JOIN `{$p}product_description` pd ON (pd.product_id = p.product_id AND pd.language_id = '" . $lang . "')";
 
 		// category chips: top-level sections first, then subcategories of the chosen section
 		$chips = array();
-		$base = 'make_id=' . $make_id . ($model_id ? '&model_id=' . $model_id : '') . ($year ? '&year=' . $year : '');
+		$base = 'make_id=' . $make_id . ($model_id ? '&model_id=' . $model_id : '') . ($gen ? '&gen=' . $gen : '') . ($year ? '&year=' . $year : '');
 		$cat_rows = $this->db->query("SELECT cp.path_id AS category_id, cp.level, COUNT(DISTINCT p.product_id) AS total" . $from . "
 			INNER JOIN `{$p}product_to_category` p2c ON (p2c.product_id = p.product_id)
 			INNER JOIN `{$p}category_path` cp ON (cp.category_id = p2c.category_id)

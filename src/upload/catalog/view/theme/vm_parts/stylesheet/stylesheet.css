@@ -1266,3 +1266,13 @@ body.vm a.vm-promo > span:not(.vm-promo-ico){grid-column:1;grid-row:1;padding-ri
 .vm-an-via{font-style:normal;padding:1px 7px;border-radius:20px;background:#eef4ff;color:#2a5bb8;font-size:11px}
 @media (max-width:575px){.vm-an-row{grid-template-columns:52px 1fr 44px;gap:10px}.vm-an-img img{width:52px;height:52px}.vm-an-price{grid-column:2;grid-row:2;font-size:15px}.vm-an-buy{grid-column:3;grid-row:1/3}}
 #tab-vm-analogs{scroll-margin-top:150px}
+
+/* 1.8.0 car picker: years by generation (AUTO.RIA) */
+.vm-cp-gen{border-top:1px solid var(--vm-line,#e6e9ef);padding-top:8px;margin-top:8px}
+.vm-cp-gen-head{display:flex;align-items:baseline;gap:8px;padding:0 4px 6px}
+.vm-cp-gen-head b{font-size:14px;color:var(--vm-dark,#1f2a37)}
+.vm-cp-gen-head small{color:var(--vm-light,#7a8594);font-size:12px}
+.vm-cp-gen .vm-cp-years{padding-top:0}
+.vm-footer-ria{opacity:.75;margin-left:12px}
+.vm-footer-ria a{color:inherit;text-decoration:underline}
+.vm-cp-gen-head em{margin-left:auto;font-style:normal;font-size:12px;color:var(--vm-light,#7a8594)}
