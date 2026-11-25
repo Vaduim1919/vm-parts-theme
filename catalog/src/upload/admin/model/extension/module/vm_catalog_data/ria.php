@@ -60,7 +60,7 @@ class VmCatalogRia {
 		$base = trim(preg_replace('/\(.*$/u', '', (string)$name));
 		$tokens = preg_split('/\s+/u', $base);
 		$out = array();
-		$body = '/^(variant|avant|turnier|kombi|combi|estate|wagon|touring|sportback|sportwagen|sw|break|bus|van|kasten|box|platform|pickup|pick-up|hatchback|sedan|saloon|liftback|coupe|coupé|cabrio|cabriolet|convertible|roadster|limousine|tourer|grandtour|universal|shooting|allroad|cross|plus|classic)$/iu';
+		$body = '/^(variant|avant|turnier|kombi|combi|estate|wagon|touring|sportback|sportwagen|sw|break|bus|van|kasten|box|platform|pickup|pick-up|hatchback|sedan|saloon|liftback|coupe|coupé|cabrio|cabriolet|convertible|roadster|limousine|tourer|grandtour|universal|shooting|allroad|cross|plus|classic|praktik|седан|универсал|універсал|пикап|пікап|купе|кабрио|кабріо|кабриолет|кабріолет|фургон|автобус|хэтчбек|хетчбек|хечбек|минивэн|мінівен|комби|комбі|лимузин|лімузин|наклонная|шасси|шасі|бортовой|бортовий)$/iu';
 
 		foreach ($tokens as $i => $tk) {
 			if ($tk === '') {

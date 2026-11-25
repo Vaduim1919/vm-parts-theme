@@ -162,6 +162,10 @@
         </div>
         <p id="vm-ria-stats">Марок: <b>{{ ria.makes }}</b> · моделей з поколіннями: <b>{{ ria.models }}</b> · поколінь: <b>{{ ria.gens }}</b> · двигунів: <b>{{ ria.mods }}</b>{% if ria.finished %} · оновлено {{ ria.finished }}{% endif %}{% if ria.stage and ria.stage != 'done' %} · <span class="text-warning">триває ({{ ria.stage }}, залишилось {{ ria.left }})</span>{% endif %}</p>
         <p id="vm-ria-msg" class="{{ ria.error ? 'text-danger' : '' }}">{{ ria.error }}</p>
+        <hr>
+        <p>Роки й двигуни для підбору беруться з даних застосовності BM («OCTAVIA III (5E3) → 1.4 TSI 140 к.с. 2012–н.в.»). Після оновлення модуля вони перераховуються автоматично через cron; кнопка нижче зробить це одразу (без запитів до BM).</p>
+        <button type="button" id="vm-cars-rebuild" class="btn btn-default"><i class="fa fa-cogs"></i> Перерахувати роки й двигуни зараз</button>
+        <span id="vm-cars-msg" style="margin-left:10px"></span>
       </div>
     </div>
 
@@ -528,6 +532,20 @@
       })();
     });
   })();
+
+  // ---------- rebuild fitment years/engines from stored BM data
+  $('#vm-cars-rebuild').on('click', function () {
+    var b = $(this).prop('disabled', true), first = true, m = $('#vm-cars-msg');
+    (function go() {
+      $.ajax({ url: '{{ cars_rebuild_url|e('js') }}' + (first ? '&restart=1' : ''), dataType: 'json', timeout: 120000 }).done(function (j) {
+        first = false;
+        if (j.error) { m.attr('class', 'text-danger').text(j.error); b.prop('disabled', false); return; }
+        m.attr('class', j.finished ? 'text-success' : 'text-info').text((j.finished ? 'Готово: ' : 'Перераховано: ') + j.done + ' з ' + (j.total || '?') + ' товарів');
+        if (j.finished) { b.prop('disabled', false); return; }
+        go();
+      }).fail(function () { setTimeout(go, 3000); });
+    })();
+  });
 
   // ---------- AUTO.RIA
   (function () {

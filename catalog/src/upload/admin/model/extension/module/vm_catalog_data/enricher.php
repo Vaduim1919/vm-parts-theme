@@ -37,6 +37,15 @@ class VmCatalogEnricher {
 			`product_id` INT(11) NOT NULL, `model_id` INT(11) NOT NULL, `year_from` SMALLINT(4) NOT NULL DEFAULT 0, `year_to` SMALLINT(4) NOT NULL DEFAULT 0,
 			`source` VARCHAR(8) NOT NULL DEFAULT 'auto', PRIMARY KEY (`product_id`, `model_id`), KEY `model_id` (`model_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
+		// engines per supplier model ("1.4 TSI 140 л.с." 2012-now) and which engines a part fits (1.8.1)
+		$this->db->query("CREATE TABLE IF NOT EXISTS `{$p}vm_engine` (
+			`engine_id` INT(11) NOT NULL AUTO_INCREMENT, `model_id` INT(11) NOT NULL, `name` VARCHAR(128) NOT NULL,
+			`year_from` SMALLINT(4) NOT NULL DEFAULT 0, `year_to` SMALLINT(4) NOT NULL DEFAULT 0,
+			PRIMARY KEY (`engine_id`), UNIQUE KEY `model_name` (`model_id`, `name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+		$this->db->query("CREATE TABLE IF NOT EXISTS `{$p}vm_product_engine` (
+			`product_id` INT(11) NOT NULL, `engine_id` INT(11) NOT NULL,
+			PRIMARY KEY (`product_id`, `engine_id`), KEY `engine_id` (`engine_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 		$this->db->query("CREATE TABLE IF NOT EXISTS `{$p}vm_catalog_enrich` (
 			`product_id` INT(11) NOT NULL, `source` VARCHAR(16) NOT NULL DEFAULT 'bm', `ext_id` VARCHAR(64) NOT NULL DEFAULT '',
 			`status` TINYINT(1) NOT NULL DEFAULT 0, `cars` INT(11) NOT NULL DEFAULT 0, `oe` INT(11) NOT NULL DEFAULT 0, `analogs` INT(11) NOT NULL DEFAULT 0,
@@ -411,9 +420,62 @@ class VmCatalogEnricher {
 		return array(trim(preg_replace('/\s+/u', ' ', $model)), $from, $to);
 	}
 
+	// "1.4 TSI 140 л.с. (2012-н.в.)" -> array("1.4 TSI 140 к.с.", 2012, 0); a plain value without years -> years 0
+	public static function parseEngine($e) {
+		if (is_array($e)) {
+			// {"name":"2.0 SKYACTIV-G","power":"165 л.с.","years":"2012-2018"}
+			$name = self::str($e);
+			$power = isset($e['power']) && is_scalar($e['power']) ? trim((string)$e['power']) : '';
+			$years = '';
+
+			foreach (array('years', 'year', 'period') as $k) {
+				if (isset($e[$k]) && is_scalar($e[$k]) && trim((string)$e[$k]) !== '') {
+					$years = trim((string)$e[$k]);
+					break;
+				}
+			}
+
+			$e = $name . ($power !== '' && strpos($name, $power) === false ? ' ' . $power : '') . ($years !== '' ? ' (' . $years . ')' : '');
+		}
+
+		$e = trim(preg_replace('/\s+/u', ' ', self::str($e)));
+
+		if ($e === '') {
+			return null;
+		}
+
+		$from = $to = 0;
+
+		if (preg_match('/\(\s*(?:\d{1,2}[.\/])?((?:19|20)\d{2})\s*[-–—]\s*(?:(?:\d{1,2}[.\/])?((?:19|20)\d{2})|н\.?\s*в\.?|now|наст\.?\s*вр\.?)?\s*\)\s*$/u', $e, $m)) {
+			$from = (int)$m[1];
+			$to = isset($m[2]) && $m[2] !== '' ? (int)$m[2] : 0;
+			$e = trim(str_replace($m[0], '', $e));
+		}
+
+		$e = preg_replace('/(?<!\p{L})л\.\s*с\.?/u', 'к.с.', $e);
+
+		return array(mb_substr($e, 0, 128), $from, $to);
+	}
+
+	private function engineId($model_id, $name, $from, $to) {
+		$k = $model_id . ':' . mb_strtolower($name, 'UTF-8');
+
+		if (isset($this->engines[$k])) {
+			return $this->engines[$k];
+		}
+
+		$this->db->query("INSERT INTO `" . DB_PREFIX . "vm_engine` SET model_id = '" . (int)$model_id . "', name = '" . $this->db->escape($name) . "', year_from = '" . (int)$from . "', year_to = '" . (int)$to . "'
+			ON DUPLICATE KEY UPDATE engine_id = LAST_INSERT_ID(engine_id), year_to = IF(year_from = 0, VALUES(year_to), year_to), year_from = IF(year_from = 0, VALUES(year_from), year_from)");
+
+		return $this->engines[$k] = (int)$this->db->getLastId();
+	}
+
+	private $engines = array();
+
 	private function saveCars($product_id, $cars) {
 		$n = 0;
 		$this->db->query("DELETE FROM `" . DB_PREFIX . "vm_product_vehicle` WHERE product_id = '" . (int)$product_id . "' AND source = 'bm'");
+		$this->db->query("DELETE FROM `" . DB_PREFIX . "vm_product_engine` WHERE product_id = '" . (int)$product_id . "'");
 
 		foreach ((array)$cars as $car) {
 			if (!is_array($car)) {
@@ -433,16 +495,93 @@ class VmCatalogEnricher {
 				$raw = is_array($m) ? $m : array();
 				$name = self::str(isset($raw['model']) ? $raw['model'] : $m);
 				list($name, $yf, $yt) = self::splitYears($name, isset($raw['model']) && is_array($raw['model']) ? $raw['model'] : $raw);
+
+				// the model has no years of its own: take them from its engines
+				$engines = array();
+
+				foreach ((isset($raw['engines']) && is_array($raw['engines']) ? $raw['engines'] : array()) as $e) {
+					$pe = self::parseEngine($e);
+
+					if ($pe && $pe[0] !== '') {
+						$engines[] = $pe;
+					}
+				}
+
+				if (!$yf && $engines) {
+					$open = false;
+
+					foreach ($engines as $pe) {
+						if ($pe[1]) {
+							$yf = $yf ? min($yf, $pe[1]) : $pe[1];
+							$open = $open || !$pe[2];
+							$yt = max($yt, $pe[2]);
+						}
+					}
+
+					if ($open) {
+						$yt = 0;
+					}
+				}
+
 				$model_id = $this->modelId($make_id, $name);
 
 				if ($model_id) {
-					$this->db->query("INSERT INTO `" . DB_PREFIX . "vm_product_vehicle` SET product_id = '" . (int)$product_id . "', model_id = '" . $model_id . "', year_from = '" . (int)$yf . "', year_to = '" . (int)$yt . "', source = 'bm' ON DUPLICATE KEY UPDATE year_from = IF(source = 'bm', VALUES(year_from), year_from), year_to = IF(source = 'bm', VALUES(year_to), year_to)");
+					$this->db->query("INSERT INTO `" . DB_PREFIX . "vm_product_vehicle` SET product_id = '" . (int)$product_id . "', model_id = '" . $model_id . "', year_from = '" . (int)$yf . "', year_to = '" . (int)$yt . "', source = 'bm' ON DUPLICATE KEY UPDATE year_to = IF(source = 'bm' OR year_from = 0, VALUES(year_to), year_to), year_from = IF(source = 'bm' OR year_from = 0, VALUES(year_from), year_from)");
 					$n++;
+
+					foreach ($engines as $pe) {
+						$eid = $this->engineId($model_id, $pe[0], $pe[1], $pe[2]);
+
+						if ($eid) {
+							$this->db->query("INSERT IGNORE INTO `" . DB_PREFIX . "vm_product_engine` SET product_id = '" . (int)$product_id . "', engine_id = '" . $eid . "'");
+						}
+					}
 				}
 			}
 		}
 
 		return $n;
+	}
+
+	// re-read the supplier fitment already stored for enriched products (no API calls): years from engines,
+	// engine links. Resumable; position kept in a small file.
+	public function rebuildCars($seconds = 20) {
+		$p = DB_PREFIX;
+		$file = DIR_STORAGE . 'upload/vm_catalog/cars_rebuild.json';
+		$st = is_file($file) ? json_decode((string)file_get_contents($file), true) : null;
+		$st = is_array($st) ? $st : array('pos' => 0, 'done' => 0, 'finished' => 0);
+
+		if (!empty($st['finished'])) {
+			return $st;
+		}
+
+		$deadline = microtime(true) + max(3, $seconds);
+		$total = (int)$this->db->query("SELECT COUNT(*) AS n FROM `{$p}vm_catalog_enrich` WHERE cars > 0")->row['n'];
+
+		while (microtime(true) < $deadline) {
+			$rows = $this->db->query("SELECT product_id, cars_json FROM `{$p}vm_catalog_enrich` WHERE cars > 0 AND product_id > '" . (int)$st['pos'] . "' ORDER BY product_id LIMIT 100")->rows;
+
+			if (!$rows) {
+				$st['finished'] = time();
+				break;
+			}
+
+			foreach ($rows as $r) {
+				$cars = json_decode((string)$r['cars_json'], true);
+
+				if (is_array($cars) && $cars) {
+					$this->saveCars((int)$r['product_id'], $cars);
+				}
+
+				$st['pos'] = (int)$r['product_id'];
+				$st['done']++;
+			}
+		}
+
+		$st['total'] = $total;
+		@file_put_contents($file, json_encode($st));
+
+		return $st;
 	}
 
 	private function saveOe($product_id, $oe) {

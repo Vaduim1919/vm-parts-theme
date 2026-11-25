@@ -57,6 +57,19 @@ class ControllerExtensionModuleVmCatalogCron extends Controller {
 			$photo_line = "\nutr photos: done=" . $ys['done'] . ' pending=' . $ys['pending'] . ' failed=' . $ys['failed'] . (isset($yr) ? ' this_run=' . $yr['done'] : '') . ($ys['error'] !== '' ? ' last_error=' . $ys['error'] : '');
 		}
 
+		// 1.8.1: re-read stored supplier fitment once (years from engines, engine links); no API calls
+		$rebuild_line = '';
+		$e0 = new VmCatalogEnricher($this->registry);
+		$e0->install();
+		$rb = $e0->rebuildCars(0);
+
+		if (empty($rb['finished'])) {
+			$t0 = microtime(true);
+			$rb = $e0->rebuildCars((int)round($seconds * 0.5));
+			$seconds = max(10, $seconds - (int)round(microtime(true) - $t0));
+			$rebuild_line = "\ncars rebuild: " . $rb['done'] . '/' . (isset($rb['total']) ? $rb['total'] : '?') . (!empty($rb['finished']) ? ' finished' : '');
+		}
+
 		// AUTO.RIA car reference: a short step when due (first import or monthly refresh)
 		$ria_line = '';
 		$rfile = dirname($file) . '/ria.php';
@@ -79,6 +92,6 @@ auto.ria: stage=" . $rj['stage'] . ' left=' . $rs['left'] . ' gens=' . $rs['gens
 		$run = $e->run($seconds, 300);
 		$s = $e->stats();
 
-		$this->response->setOutput(date('Y-m-d H:i:s') . ' checked=' . $run['checked'] . ' found=' . $run['found'] . ' notfound=' . $run['notfound'] . ' errors=' . $run['errors'] . ' requests=' . $run['requests'] . (!empty($run['brand_skipped']) ? ' brand_skipped=' . $run['brand_skipped'] : '') . ($run['stopped'] ? ' stop=' . $run['stopped'] : '') . "\ntotal: " . $s['checked'] . '/' . $s['total'] . ' found=' . $s['found'] . ' cars=' . $s['links'] . ' photos=' . $s['images'] . ' photo_fail=' . (isset($s['img_failed']) ? $s['img_failed'] : '-') . "\nversion: " . @trim(file_get_contents(dirname($file) . '/VERSION')) . ' photos_mode=' . $this->config->get('module_vm_catalog_bm_photos') . "\nlast photo error: " . (isset($s['img_error']) && $s['img_error'] !== '' ? $s['img_error'] : '-') . $photo_line . $ria_line . "\n");
+		$this->response->setOutput(date('Y-m-d H:i:s') . ' checked=' . $run['checked'] . ' found=' . $run['found'] . ' notfound=' . $run['notfound'] . ' errors=' . $run['errors'] . ' requests=' . $run['requests'] . (!empty($run['brand_skipped']) ? ' brand_skipped=' . $run['brand_skipped'] : '') . ($run['stopped'] ? ' stop=' . $run['stopped'] : '') . "\ntotal: " . $s['checked'] . '/' . $s['total'] . ' found=' . $s['found'] . ' cars=' . $s['links'] . ' photos=' . $s['images'] . ' photo_fail=' . (isset($s['img_failed']) ? $s['img_failed'] : '-') . "\nversion: " . @trim(file_get_contents(dirname($file) . '/VERSION')) . ' photos_mode=' . $this->config->get('module_vm_catalog_bm_photos') . "\nlast photo error: " . (isset($s['img_error']) && $s['img_error'] !== '' ? $s['img_error'] : '-') . $photo_line . $ria_line . $rebuild_line . "\n");
 	}
 }

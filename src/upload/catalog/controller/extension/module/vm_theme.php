@@ -2131,7 +2131,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$base = trim(preg_replace('/\(.*$/u', '', (string)$name));
 		$tokens = preg_split('/\s+/u', $base);
 		$out = array();
-		$body = '/^(variant|avant|turnier|kombi|combi|estate|wagon|touring|sportback|sportwagen|sw|break|bus|van|kasten|box|platform|pickup|pick-up|hatchback|sedan|saloon|liftback|coupe|coupé|cabrio|cabriolet|convertible|roadster|limousine|tourer|grandtour|universal|shooting|allroad|cross|plus|classic)$/iu';
+		$body = '/^(variant|avant|turnier|kombi|combi|estate|wagon|touring|sportback|sportwagen|sw|break|bus|van|kasten|box|platform|pickup|pick-up|hatchback|sedan|saloon|liftback|coupe|coupé|cabrio|cabriolet|convertible|roadster|limousine|tourer|grandtour|universal|shooting|allroad|cross|plus|classic|praktik|седан|универсал|універсал|пикап|пікап|купе|кабрио|кабріо|кабриолет|кабріолет|фургон|автобус|хэтчбек|хетчбек|хечбек|минивэн|мінівен|комби|комбі|лимузин|лімузин|наклонная|шасси|шасі|бортовой|бортовий)$/iu';
 
 		foreach ($tokens as $i => $tk) {
 			if ($tk === '') {
@@ -2293,7 +2293,93 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			$sql = $or ? '(' . implode(' OR ', $or) . ')' : '0';
 		}
 
+		// engine chosen: parts linked to that engine, plus parts of this model that have no engine list at all
+		if (!empty($car['eng_ids'])) {
+			$eng = implode(',', array_map('intval', $car['eng_ids']));
+			$sql .= " AND (pv.product_id IN (SELECT pe.product_id FROM `" . DB_PREFIX . "vm_product_engine` pe WHERE pe.engine_id IN (" . $eng . "))
+				OR NOT EXISTS (SELECT 1 FROM `" . DB_PREFIX . "vm_product_engine` pe2 INNER JOIN `" . DB_PREFIX . "vm_engine` e2 ON (e2.engine_id = pe2.engine_id) WHERE pe2.product_id = pv.product_id AND e2.model_id = pv.model_id))";
+		}
+
 		return $sql;
+	}
+
+	// ---------------- engines (1.8.1): from the supplier fitment ("1.4 TSI 140 к.с.", 2012-now)
+
+	private function enginesReady() {
+		static $ok = null;
+
+		if ($ok === null) {
+			$ok = $this->hasTable('vm_engine') && $this->hasTable('vm_product_engine');
+		}
+
+		return $ok;
+	}
+
+	// family models allowed for a generation choice (same generation number, or no number)
+	private function genModelIds($car) {
+		$ids = !empty($car['model_ids']) ? $car['model_ids'] : array((int)$car['model_id']);
+		$roman = !empty($car['gen_roman']) ? $car['gen_roman'] : '';
+
+		if ($roman === '' || empty($car['model_names'])) {
+			return $ids;
+		}
+
+		$out = array();
+
+		foreach ($ids as $id) {
+			$r = isset($car['model_names'][$id]) ? self::modelRoman($car['model_names'][$id]) : '';
+
+			if ($r === '' || $r === $roman) {
+				$out[] = (int)$id;
+			}
+		}
+
+		return $out ? $out : $ids;
+	}
+
+	// engines of the chosen model (+ generation / year), one row per engine name
+	private function carEnginesData($car) {
+		if (!$car || !$car['model_id'] || !$this->enginesReady()) {
+			return array();
+		}
+
+		$ids = $this->genModelIds($car);
+		$now = (int)date('Y');
+		$cond = "e.model_id IN (" . implode(',', $ids) . ")";
+
+		if (!empty($car['year'])) {
+			$y = (int)$car['year'];
+			$cond .= " AND (e.year_from = 0 OR e.year_from <= '" . $y . "') AND (e.year_to = 0 OR e.year_to >= '" . $y . "')";
+		} elseif (!empty($car['gen_yf'])) {
+			$gf = (int)$car['gen_yf'];
+			$gt = !empty($car['gen_yt']) ? (int)$car['gen_yt'] : $now;
+			$cond .= " AND (e.year_from = 0 OR (LEAST(IF(e.year_to = 0, " . $now . ", e.year_to), " . $gt . ") - GREATEST(e.year_from, " . $gf . ") + 1) >= 1)";
+		}
+
+		$rows = $this->db->query("SELECT MIN(e.engine_id) AS id, MIN(e.name) AS name, MIN(NULLIF(e.year_from, 0)) AS yf, MAX(e.year_to) AS yt, SUM(e.year_from > 0 AND e.year_to = 0) AS open_end, COUNT(DISTINCT pe.product_id) AS n
+			FROM `" . DB_PREFIX . "vm_engine` e
+			INNER JOIN `" . DB_PREFIX . "vm_product_engine` pe ON (pe.engine_id = e.engine_id)
+			INNER JOIN `" . DB_PREFIX . "product` p ON (p.product_id = pe.product_id AND p.status = '1')
+			WHERE " . $cond . " GROUP BY LOWER(e.name)")->rows;
+
+		$t = $this->texts();
+		$out = array();
+
+		foreach ($rows as $r) {
+			$out[] = array('id' => (int)$r['id'], 'name' => $r['name'], 'years' => $r['yf'] ? $r['yf'] . '–' . (($r['open_end'] || !$r['yt']) ? $t['text_now'] : $r['yt']) : '', 'count' => (int)$r['n']);
+		}
+
+		usort($out, function ($a, $b) {
+			return strnatcasecmp($a['name'], $b['name']);
+		});
+
+		return $out;
+	}
+
+	public function carEngines() {
+		$g = $this->request->get;
+		$car = $this->carInfo(isset($g['make_id']) ? (int)$g['make_id'] : 0, isset($g['model_id']) ? (int)$g['model_id'] : 0, isset($g['year']) ? (int)$g['year'] : 0, isset($g['gen']) ? (int)$g['gen'] : 0);
+		$this->jsonOut($this->carEnginesData($car));
 	}
 
 	private function carCacheKey($what) {
@@ -2506,7 +2592,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 	// cookie "make-model-year"; make only is allowed for the results page, the garage needs a model
 	private function carCookie() {
-		$c = array('make_id' => 0, 'model_id' => 0, 'year' => 0, 'gen' => 0);
+		$c = array('make_id' => 0, 'model_id' => 0, 'year' => 0, 'gen' => 0, 'eng' => 0);
 
 		if (!empty($this->request->cookie['vm_car'])) {
 			$parts = array_map('intval', explode('-', (string)$this->request->cookie['vm_car']));
@@ -2514,13 +2600,14 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			$c['model_id'] = isset($parts[1]) ? $parts[1] : 0;
 			$c['year'] = isset($parts[2]) ? $parts[2] : 0;
 			$c['gen'] = isset($parts[3]) ? $parts[3] : 0;
+			$c['eng'] = isset($parts[4]) ? $parts[4] : 0;
 		}
 
 		return $c;
 	}
 
 	// selection + human names, or false
-	private function carInfo($make_id, $model_id = 0, $year = 0, $gen = 0) {
+	private function carInfo($make_id, $model_id = 0, $year = 0, $gen = 0, $eng = 0) {
 		if (!$make_id || !$this->vmTablesExist()) {
 			return false;
 		}
@@ -2533,7 +2620,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		$make_name = $this->riaMakeName((int)$make_id);
 		$make_name = $make_name !== '' ? $make_name : self::prettyName($make['name']);
-		$info = array('make_id' => (int)$make_id, 'model_id' => 0, 'model_ids' => array(), 'year' => 0, 'gen' => 0, 'gen_yf' => 0, 'gen_yt' => 0, 'gen_name' => '', 'make' => $make_name, 'model' => '', 'label' => $make_name);
+		$info = array('make_id' => (int)$make_id, 'model_id' => 0, 'model_ids' => array(), 'year' => 0, 'gen' => 0, 'gen_yf' => 0, 'gen_yt' => 0, 'gen_name' => '', 'eng' => 0, 'eng_ids' => array(), 'eng_name' => '', 'make' => $make_name, 'model' => '', 'label' => $make_name);
 
 		if ($model_id) {
 			$model = $this->db->query("SELECT model_id, name FROM `" . DB_PREFIX . "vm_model` WHERE model_id = '" . (int)$model_id . "' AND make_id = '" . (int)$make_id . "'")->row;
@@ -2570,10 +2657,21 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				} elseif ($info['gen']) {
 					$info['label'] .= ' (' . $info['gen_yf'] . '–' . ($info['gen_yt'] ? $info['gen_yt'] : $this->texts()['text_now']) . ')';
 				}
+
+				if ($eng && $this->enginesReady()) {
+					$e = $this->db->query("SELECT name FROM `" . DB_PREFIX . "vm_engine` WHERE engine_id = '" . (int)$eng . "' AND model_id IN (" . implode(',', $info['model_ids']) . ")")->row;
+
+					if ($e) {
+						$info['eng'] = (int)$eng;
+						$info['eng_name'] = $e['name'];
+						$info['eng_ids'] = array_map('intval', array_column($this->db->query("SELECT engine_id FROM `" . DB_PREFIX . "vm_engine` WHERE model_id IN (" . implode(',', $info['model_ids']) . ") AND name = '" . $this->db->escape($e['name']) . "'")->rows, 'engine_id'));
+						$info['label'] .= ', ' . $e['name'];
+					}
+				}
 			}
 		}
 
-		$info['href'] = $this->url->link('extension/module/vm_theme/car', 'make_id=' . $info['make_id'] . ($info['model_id'] ? '&model_id=' . $info['model_id'] : '') . ($info['gen'] ? '&gen=' . $info['gen'] : '') . ($info['year'] ? '&year=' . $info['year'] : ''));
+		$info['href'] = $this->url->link('extension/module/vm_theme/car', 'make_id=' . $info['make_id'] . ($info['model_id'] ? '&model_id=' . $info['model_id'] : '') . ($info['gen'] ? '&gen=' . $info['gen'] : '') . ($info['year'] ? '&year=' . $info['year'] : '') . ($info['eng'] ? '&eng=' . $info['eng'] : ''));
 
 		return $info;
 	}
@@ -2583,7 +2681,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		if ($g === null) {
 			$c = $this->carCookie();
-			$g = ($c['make_id'] && $c['model_id']) ? $this->carInfo($c['make_id'], $c['model_id'], $c['year'], $c['gen']) : false;
+			$g = ($c['make_id'] && $c['model_id']) ? $this->carInfo($c['make_id'], $c['model_id'], $c['year'], $c['gen'], $c['eng']) : false;
 
 			if ($g && !$g['model_id']) {
 				$g = false;
@@ -2609,18 +2707,19 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$data['vm_garage'] = $garage;
 		$data['vm_carbar'] = array(
 			'cfg' => json_encode(array(
-				'sel'      => array('make_id' => (int)$sel['make_id'], 'model_id' => (int)$sel['model_id'], 'year' => (int)$sel['year'], 'gen' => isset($sel['gen']) ? (int)$sel['gen'] : 0, 'gen_name' => isset($sel['gen_name']) ? $sel['gen_name'] : '', 'make' => isset($sel['make']) ? $sel['make'] : '', 'model' => isset($sel['model']) ? $sel['model'] : ''),
+				'sel'      => array('make_id' => (int)$sel['make_id'], 'model_id' => (int)$sel['model_id'], 'year' => (int)$sel['year'], 'gen' => isset($sel['gen']) ? (int)$sel['gen'] : 0, 'gen_name' => isset($sel['gen_name']) ? $sel['gen_name'] : '', 'eng' => isset($sel['eng']) ? (int)$sel['eng'] : 0, 'eng_name' => isset($sel['eng_name']) ? $sel['eng_name'] : '', 'make' => isset($sel['make']) ? $sel['make'] : '', 'model' => isset($sel['model']) ? $sel['model'] : ''),
 				'garage'   => $garage ? $garage['label'] : '',
 				'urls'     => array(
 					'makes'   => html_entity_decode($this->url->link('extension/module/vm_theme/carMakes'), ENT_QUOTES, 'UTF-8'),
 					'models'  => html_entity_decode($this->url->link('extension/module/vm_theme/carModels'), ENT_QUOTES, 'UTF-8'),
 					'years'   => html_entity_decode($this->url->link('extension/module/vm_theme/carYears'), ENT_QUOTES, 'UTF-8'),
+					'engines' => $this->enginesReady() ? html_entity_decode($this->url->link('extension/module/vm_theme/carEngines'), ENT_QUOTES, 'UTF-8') : '',
 					'results' => html_entity_decode($this->url->link('extension/module/vm_theme/car'), ENT_QUOTES, 'UTF-8'),
 					'clear'   => html_entity_decode($this->url->link('extension/module/vm_theme/carClear'), ENT_QUOTES, 'UTF-8')
 				),
 				't' => self::decodeAll(array(
 					'make' => $t['text_car_make'], 'model' => $t['text_car_model'], 'year' => $t['text_car_year'],
-					'now' => $t['text_now'], 'all_years' => $t['text_car_all_years'], 'all_gen' => $t['text_car_all_gen'], 'other_years' => $t['text_car_other_years'], 'all_models' => $t['text_car_all_models'], 'popular' => $t['text_car_popular'], 'all_makes' => $t['text_car_all_makes'],
+					'now' => $t['text_now'], 'engine' => $t['text_car_engine'], 'all_engines' => $t['text_car_all_engines'], 'all_years' => $t['text_car_all_years'], 'all_gen' => $t['text_car_all_gen'], 'other_years' => $t['text_car_other_years'], 'all_models' => $t['text_car_all_models'], 'popular' => $t['text_car_popular'], 'all_makes' => $t['text_car_all_makes'],
 					'search_make' => $t['text_car_search_make'], 'search_model' => $t['text_car_search_model'], 'nothing' => $t['text_car_nothing'],
 					'loading' => $t['text_car_loading'], 'show' => $t['text_car_show'], 'show_n' => $t['text_car_show_n'], 'parts' => $t['text_car_parts'], 'pick_make' => $t['text_car_pick_make'], 'back' => $t['text_car_back'], 'title' => $t['text_car_title'], 'forget' => $t['text_car_forget']
 				))
@@ -2658,8 +2757,9 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$year = isset($this->request->get['year']) ? (int)$this->request->get['year'] : 0;
 		$cat = isset($this->request->get['cat']) ? (int)$this->request->get['cat'] : 0;
 		$gen = isset($this->request->get['gen']) ? (int)$this->request->get['gen'] : 0;
+		$eng = isset($this->request->get['eng']) ? (int)$this->request->get['eng'] : 0;
 
-		$info = $this->carInfo($make_id, $model_id, $year, $gen);
+		$info = $this->carInfo($make_id, $model_id, $year, $gen, $eng);
 
 		if (!$info) {
 			$this->response->redirect($this->url->link('common/home'));
@@ -2672,8 +2772,10 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$year = $info['year'];
 
 		$gen = $info['gen'];
-		setcookie('vm_car', $make_id . '-' . $model_id . '-' . $year . '-' . $gen, time() + 86400 * 180, '/');
-		$this->request->cookie['vm_car'] = $make_id . '-' . $model_id . '-' . $year . '-' . $gen;
+		$eng = $info['eng'];
+		$cookie = $make_id . '-' . $model_id . '-' . $year . '-' . $gen . '-' . $eng;
+		setcookie('vm_car', $cookie, time() + 86400 * 180, '/');
+		$this->request->cookie['vm_car'] = $cookie;
 
 		$this->load->language('product/category');
 		$this->load->model('catalog/product');
@@ -2690,11 +2792,18 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		// category chips: top-level sections first, then subcategories of the chosen section
 		$chips = array();
-		$base = 'make_id=' . $make_id . ($model_id ? '&model_id=' . $model_id : '') . ($gen ? '&gen=' . $gen : '') . ($year ? '&year=' . $year : '');
-		$cat_rows = $this->db->query("SELECT cp.path_id AS category_id, cp.level, COUNT(DISTINCT p.product_id) AS total" . $from . "
-			INNER JOIN `{$p}product_to_category` p2c ON (p2c.product_id = p.product_id)
-			INNER JOIN `{$p}category_path` cp ON (cp.category_id = p2c.category_id)
-			WHERE " . $where . " GROUP BY cp.path_id, cp.level")->rows;
+		$base = 'make_id=' . $make_id . ($model_id ? '&model_id=' . $model_id : '') . ($gen ? '&gen=' . $gen : '') . ($year ? '&year=' . $year : '') . ($eng ? '&eng=' . $eng : '');
+		// the heaviest query of the page: counts per category for this car; cached for 30 minutes
+		$ck = 'vm_carcats.' . md5($where . '|' . (int)$this->config->get('config_store_id'));
+		$cat_rows = $this->vmCacheGet($ck, 1800);
+
+		if (!is_array($cat_rows)) {
+			$cat_rows = $this->db->query("SELECT cp.path_id AS category_id, cp.level, COUNT(DISTINCT p.product_id) AS total" . $from . "
+				INNER JOIN `{$p}product_to_category` p2c ON (p2c.product_id = p.product_id)
+				INNER JOIN `{$p}category_path` cp ON (cp.category_id = p2c.category_id)
+				WHERE " . $where . " GROUP BY cp.path_id, cp.level")->rows;
+			$this->vmCacheSet($ck, $cat_rows);
+		}
 
 		$parent_of = array();
 		$counts = array();
@@ -2757,7 +2866,13 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$sorts = array('p.sort_order' => 'p.sort_order', 'pd.name' => 'LCASE(pd.name)', 'p.price' => 'p.price', 'p.date_added' => 'p.date_added');
 		$sort_sql = isset($sorts[$sort]) ? $sorts[$sort] : 'p.sort_order';
 
-		$total = (int)$this->db->query("SELECT COUNT(DISTINCT p.product_id) AS total" . $from . " WHERE " . $where)->row['total'];
+		$tk = 'vm_cartotal.' . md5($where . '|' . (int)$this->config->get('config_store_id'));
+		$total = $this->vmCacheGet($tk, 1800);
+
+		if (!is_int($total)) {
+			$total = (int)$this->db->query("SELECT COUNT(DISTINCT p.product_id) AS total" . $from . " WHERE " . $where)->row['total'];
+			$this->vmCacheSet($tk, $total);
+		}
 		$ids = array();
 
 		foreach ($this->db->query("SELECT DISTINCT p.product_id, p.quantity, p.sort_order, p.price, p.date_added, pd.name" . $from . " WHERE " . $where . " ORDER BY (p.quantity > 0) DESC, " . $sort_sql . " " . $order . ", LCASE(pd.name) ASC LIMIT " . (($page - 1) * $limit) . "," . $limit)->rows as $r) {

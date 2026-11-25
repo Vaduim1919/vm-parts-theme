@@ -177,6 +177,7 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		$data['yml_photos_url'] = $this->ajaxUrl('ymlPhotos');
 		$data['ria_step_url'] = $this->ajaxUrl('riaStep');
 		$data['ria_key_url'] = $this->ajaxUrl('riaKey');
+		$data['cars_rebuild_url'] = $this->ajaxUrl('carsRebuild');
 		$data['ria'] = $this->model_extension_module_vm_catalog->ria()->stats();
 		$data['yml_job'] = $this->model_extension_module_vm_catalog->yml()->getJob();
 		$data['yml_photo'] = $this->model_extension_module_vm_catalog->yml()->photoStats();
@@ -552,6 +553,25 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 		}
 
 		$this->json(array('ok' => 1, 'makes' => count($test), 'stats' => $r->stats()));
+	}
+
+	public function carsRebuild() {
+		$this->load->language($this->route);
+		$this->load->model($this->route);
+
+		if (!$this->canModify()) {
+			return $this->json(array('error' => $this->language->get('error_permission')));
+		}
+
+		require_once DIR_APPLICATION . 'model/extension/module/vm_catalog_data/enricher.php';
+		$e = new VmCatalogEnricher($this->registry);
+		$e->install();
+
+		if (!empty($this->request->get['restart'])) {
+			@unlink(DIR_STORAGE . 'upload/vm_catalog/cars_rebuild.json');
+		}
+
+		$this->json($e->rebuildCars(20));
 	}
 
 	public function riaStep() {
