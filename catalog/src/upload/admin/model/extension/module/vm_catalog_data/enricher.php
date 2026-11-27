@@ -422,7 +422,21 @@ class VmCatalogEnricher {
 
 	// "1.4 TSI 140 л.с. (2012-н.в.)" -> array("1.4 TSI 140 к.с.", 2012, 0); a plain value without years -> years 0
 	public static function parseEngine($e) {
-		if (is_array($e)) {
+		if (is_array($e) && isset($e['engine']) && is_scalar($e['engine']) && trim((string)$e['engine']) !== '') {
+			// BM: {"engine":"1.4 55 л.с. (1993-1999)","begin_release":"1993-07-01","end_release":"1999-04-01","horse_power":55,...}
+			$txt = trim((string)$e['engine']);
+
+			if (!preg_match('/\(\s*(?:19|20)\d{2}/', $txt)) {
+				$b = isset($e['begin_release']) ? (int)substr((string)$e['begin_release'], 0, 4) : 0;
+				$en = isset($e['end_release']) ? (int)substr((string)$e['end_release'], 0, 4) : 0;
+
+				if ($b >= 1900) {
+					$txt .= ' (' . $b . '-' . ($en >= 1900 ? $en : 'н.в.') . ')';
+				}
+			}
+
+			$e = $txt;
+		} elseif (is_array($e)) {
 			// {"name":"2.0 SKYACTIV-G","power":"165 л.с.","years":"2012-2018"}
 			$name = self::str($e);
 			$power = isset($e['power']) && is_scalar($e['power']) ? trim((string)$e['power']) : '';
@@ -576,7 +590,10 @@ class VmCatalogEnricher {
 		$p = DB_PREFIX;
 		$file = DIR_STORAGE . 'upload/vm_catalog/cars_rebuild.json';
 		$st = is_file($file) ? json_decode((string)file_get_contents($file), true) : null;
-		$st = is_array($st) ? $st : array('pos' => 0, 'done' => 0, 'finished' => 0);
+		// v2: BM engines come as objects {"engine": "..."}; earlier passes read none of them, so run again
+		if (!is_array($st) || (int)(isset($st['v']) ? $st['v'] : 1) < 2) {
+			$st = array('pos' => 0, 'done' => 0, 'finished' => 0, 'v' => 2);
+		}
 
 		if (!empty($st['finished'])) {
 			return $st;

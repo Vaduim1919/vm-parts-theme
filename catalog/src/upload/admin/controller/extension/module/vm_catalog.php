@@ -599,7 +599,7 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			$r->start();
 		}
 
-		$job = $r->step(20);
+		$job = $r->step(20, !empty($this->request->get['restart']));
 		$this->json(array('job' => array('stage' => $job['stage'], 'error' => $job['error'], 'paused' => !empty($job['paused']), 'waiting' => !empty($job['waiting'])), 'stats' => $r->stats()));
 	}
 

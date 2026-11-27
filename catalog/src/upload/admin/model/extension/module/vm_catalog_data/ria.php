@@ -215,12 +215,18 @@ class VmCatalogRia {
 		return $j['finished'] < time() - 180 * 86400;
 	}
 
-	public function step($seconds = 20) {
+	public function step($seconds = 20, $force = false) {
 		$this->install();
 		$job = $this->getJob();
 
 		if (!$job || $job['stage'] === 'done') {
 			$job = $this->start();
+		}
+
+		// the admin button retries at once (e.g. after buying a bigger package); cron respects the pause
+		if ($force) {
+			$job['pause'] = 0;
+			$job['hour_n'] = 0;
 		}
 
 		if (!empty($job['pause']) && $job['pause'] > time()) {
