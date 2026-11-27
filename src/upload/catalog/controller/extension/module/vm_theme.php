@@ -141,8 +141,48 @@ class ControllerExtensionModuleVmTheme extends Controller {
 	// OpenCart 3 sets its session cookie with plain setcookie(): no HttpOnly or Secure, so a script injected
 	// into any page could read the session. Right before headers go out, add the flags. (No SameSite: payment
 	// gateways may return the buyer with a cross-site POST.)
+	// A car is in the garage and the shopper opens a category: show only parts for that car straight away
+	// (the filtered view with "only my car" on). Not when the category has no parts linked to that car
+	// (oils, tools...), and not when the shopper switched it off (car=0 in the address).
+	private function autoCar($route) {
+		static $seen = false;
+
+		if ($seen) {
+			return;
+		}
+
+		$seen = true;
+
+		if ($route !== 'product/category' || headers_sent() || isset($this->request->get['car']) || !empty($this->request->get['search']) || $this->request->server['REQUEST_METHOD'] !== 'GET') {
+			return;
+		}
+
+		$path = '';
+		$cat_id = $this->categoryId($path);
+
+		if (!$cat_id || !$this->vmTablesExist() || !($g = $this->garage()) || empty($g['model_id'])) {
+			return;
+		}
+
+		$sel = $this->filterSel();
+		$sel['car'] = 1;
+		$ck = 'vm_autocar.' . $cat_id . '.' . md5($this->carCond($g)) . '.' . (int)$this->config->get('config_store_id');
+		$n = $this->vmCacheGet($ck, 1800);
+
+		if (!is_int($n)) {
+			$n = (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "product` p WHERE " . $this->filterWhere($cat_id, $sel))->row['n'];
+			$this->vmCacheSet($ck, $n);
+		}
+
+		if ($n > 0) {
+			$this->response->redirect(str_replace('&amp;', '&', $this->filterUrl($path, $sel)));
+		}
+	}
+
 	public function secure(&$route = '', &$args = array()) {
 		static $done = false;
+
+		$this->autoCar($route);
 
 		if ($done || headers_sent() || !function_exists('header_register_callback')) {
 			return;
@@ -1473,6 +1513,8 @@ class ControllerExtensionModuleVmTheme extends Controller {
 
 		if ($sel['car']) {
 			$q['car'] = 1;
+		} elseif ($this->garage()) {
+			$q['car'] = 0; // switched off on purpose: do not apply the garage car again
 		}
 
 		foreach ($sel['a'] as $aid => $vals) {
@@ -1483,7 +1525,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			unset($q[$k]);
 		}
 
-		$has = count($q) > 1;
+		$has = count(array_diff_key($q, array('car' => 1))) > 1 || !empty($q['car']);
 		$args = array();
 
 		foreach ($q as $k => $v) {
@@ -1660,7 +1702,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$sel = $this->filterSel();
 
 		if (!$this->filterActive($sel)) {
-			$this->response->redirect($this->url->link('product/category', 'path=' . $path));
+			$this->response->redirect(str_replace('&amp;', '&', $this->url->link('product/category', 'path=' . $path . ($this->garage() ? '&car=0' : ''))));
 
 			return;
 		}
