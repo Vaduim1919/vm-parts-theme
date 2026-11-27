@@ -2241,12 +2241,17 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		return $memo[$make_id];
 	}
 
-	// "III покоління/A7 (FL)" -> "A7 (FL)", "IV покоління" -> "IV покоління"
+	// "III покоління/A7" -> "III A7", "VII покоління (FL)/Typ 5G" -> "VII (FL) Typ 5G", "VIII покоління" -> "VIII"
 	private static function genShort($name) {
 		$name = trim((string)$name);
+
+		if (preg_match('/^\s*([IVXLC]+)\s*поколін[а-яіїєґ]*\s*(\(FL\))?\s*\/*\s*(.*)$/iu', $name, $m)) {
+			return trim($m[1] . ($m[2] !== '' ? ' ' . $m[2] : '') . ($m[3] !== '' ? ' ' . trim($m[3], ' /') : ''));
+		}
+
 		$pos = mb_strpos($name, '/');
 
-		return $pos !== false ? trim(mb_substr($name, $pos + 1)) : $name;
+		return $pos !== false ? trim(mb_substr($name, $pos + 1), ' /') : $name;
 	}
 
 	// SQL on vm_product_vehicle rows (alias pv) for a chosen car: family models + exact year, or a generation:
@@ -2403,6 +2408,11 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		if ($st === null) {
 			$j = is_file(DIR_STORAGE . 'upload/vm_catalog/cars_rebuild.json') ? json_decode((string)@file_get_contents(DIR_STORAGE . 'upload/vm_catalog/cars_rebuild.json'), true) : null;
 			$st = is_array($j) && !empty($j['finished']) ? (string)(int)$j['finished'] : (is_array($j) ? 'run' . (int)floor(time() / 600) : '0');
+
+			// and when the AUTO.RIA reference grows (new generations), so year lists pick them up
+			if ($this->hasTable('vm_ria_gen')) {
+				$st .= '.g' . (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "vm_ria_gen`")->row['n'];
+			}
 		}
 
 		return $st;
