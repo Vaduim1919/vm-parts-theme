@@ -312,7 +312,7 @@ class VmCatalogRia {
 
 				foreach ($list as $block) {
 					foreach ((isset($block['generations']) && is_array($block['generations'])) ? $block['generations'] : array() as $g) {
-						if (empty($g['generationId'])) {
+						if (empty($g['generationId']) || (!empty($g['yearTo']) && (int)$g['yearTo'] < 1990)) {
 							continue;
 						}
 

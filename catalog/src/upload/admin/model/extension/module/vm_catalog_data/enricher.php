@@ -486,6 +486,8 @@ class VmCatalogEnricher {
 
 	private $engines = array();
 
+	const MIN_YEAR = 1990; // cars that left production before this are not kept (the shop does not sell for them)
+
 	const MAX_ENGINE_LINKS = 1500; // universal parts (bulbs, wipers) list thousands of engines: keep it bounded
 
 	private function saveCars($product_id, $cars) {
@@ -518,7 +520,11 @@ class VmCatalogEnricher {
 				foreach ((isset($raw['engines']) && is_array($raw['engines']) ? $raw['engines'] : array()) as $e) {
 					$pe = self::parseEngine($e);
 
-					if ($pe && $pe[0] !== '') {
+					if ($pe && $pe[0] !== '' && !($pe[2] && $pe[2] < self::MIN_YEAR)) {
+						if ($pe[1] && $pe[1] < self::MIN_YEAR) {
+							$pe[1] = self::MIN_YEAR;
+						}
+
 						$engines[] = $pe;
 					}
 				}
@@ -537,6 +543,14 @@ class VmCatalogEnricher {
 					if ($open) {
 						$yt = 0;
 					}
+				}
+
+				if ($yt && $yt < self::MIN_YEAR) {
+					continue; // out of production before 1990
+				}
+
+				if ($yf && $yf < self::MIN_YEAR) {
+					$yf = self::MIN_YEAR;
 				}
 
 				$model_id = $this->modelId($make_id, $name);
@@ -584,11 +598,65 @@ class VmCatalogEnricher {
 		return count($pv);
 	}
 
+	// one-off: drop cars that left production before MIN_YEAR (and their engines, links and AUTO.RIA generations),
+	// start the rest at MIN_YEAR. Runs once per MIN_YEAR value; new data is filtered in saveCars().
+	public function purgeOld() {
+		$p = DB_PREFIX;
+		$y = (int)self::MIN_YEAR;
+		$flag = DIR_STORAGE . 'upload/vm_catalog/purge_old.txt';
+
+		if (is_file($flag) && (int)file_get_contents($flag) === $y) {
+			return false;
+		}
+
+		$tables = array();
+
+		foreach ($this->db->query("SHOW TABLES LIKE '" . $this->db->escape($p) . "vm\\_%'")->rows as $r) {
+			$tables[substr(reset($r), strlen($p))] = true;
+		}
+
+		if (empty($tables['vm_product_vehicle']) || empty($tables['vm_model'])) {
+			return false;
+		}
+
+		$this->db->query("DELETE FROM `{$p}vm_product_vehicle` WHERE year_to > 0 AND year_to < '" . $y . "'");
+		$this->db->query("UPDATE `{$p}vm_product_vehicle` SET year_from = '" . $y . "' WHERE year_from > 0 AND year_from < '" . $y . "'");
+
+		if (!empty($tables['vm_engine'])) {
+			$this->db->query("DELETE e FROM `{$p}vm_engine` e LEFT JOIN `{$p}vm_product_vehicle` pv ON (pv.model_id = e.model_id) WHERE (e.year_to > 0 AND e.year_to < '" . $y . "') OR pv.model_id IS NULL");
+			$this->db->query("UPDATE `{$p}vm_engine` SET year_from = '" . $y . "' WHERE year_from > 0 AND year_from < '" . $y . "'");
+
+			if (!empty($tables['vm_product_engine'])) {
+				$this->db->query("DELETE pe FROM `{$p}vm_product_engine` pe LEFT JOIN `{$p}vm_engine` e ON (e.engine_id = pe.engine_id) WHERE e.engine_id IS NULL");
+			}
+		}
+
+		$this->db->query("DELETE m FROM `{$p}vm_model` m LEFT JOIN `{$p}vm_product_vehicle` pv ON (pv.model_id = m.model_id) WHERE pv.model_id IS NULL");
+
+		if (!empty($tables['vm_ria_gen'])) {
+			$this->db->query("DELETE FROM `{$p}vm_ria_gen` WHERE year_to > 0 AND year_to < '" . $y . "'");
+		}
+
+		@file_put_contents($flag, (string)$y);
+
+		// the site caches the picker per rebuild stamp: move it so the lists refresh now
+		$file = DIR_STORAGE . 'upload/vm_catalog/cars_rebuild.json';
+		$st = is_file($file) ? json_decode((string)file_get_contents($file), true) : null;
+
+		if (is_array($st) && !empty($st['finished'])) {
+			$st['finished'] = time();
+			@file_put_contents($file, json_encode($st));
+		}
+
+		return true;
+	}
+
 	// re-read the supplier fitment already stored for enriched products (no API calls): years from engines,
 	// engine links. Resumable; position kept in a small file.
 	public function rebuildCars($seconds = 20) {
 		$p = DB_PREFIX;
 		$file = DIR_STORAGE . 'upload/vm_catalog/cars_rebuild.json';
+		$this->purgeOld();
 		$st = is_file($file) ? json_decode((string)file_get_contents($file), true) : null;
 		// v2: BM engines come as objects {"engine": "..."}; earlier passes read none of them, so run again
 		if (!is_array($st) || (int)(isset($st['v']) ? $st['v'] : 1) < 2) {
