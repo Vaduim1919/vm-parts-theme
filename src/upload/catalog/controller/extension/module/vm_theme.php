@@ -2996,6 +2996,18 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			'bar'   => $this->carBarHtml(true, $info['label'])
 		);
 
+		// a category is chosen: the usual filter panel (brand, price, stock, characteristics) with "only my car" on;
+		// its links lead to the filtered category view, which keeps the car filter
+		if ($cat && $model_id) {
+			$cpath = implode('_', array_column($this->db->query("SELECT path_id FROM `{$p}category_path` WHERE category_id = '" . (int)$cat . "' ORDER BY level")->rows, 'path_id'));
+
+			if ($cpath !== '') {
+				$fsel = $this->filterSel();
+				$fsel['car'] = 1;
+				$data['vm_filters'] = $this->filterPanel($cat, $cpath, $fsel);
+			}
+		}
+
 		$data['text_compare'] = sprintf($this->language->get('text_compare'), isset($this->session->data['compare']) ? count($this->session->data['compare']) : 0);
 		$data['compare'] = $this->url->link('product/compare');
 
