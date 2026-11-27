@@ -224,6 +224,7 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			// empty password field = keep the saved one
 			'module_vm_catalog_utr_password' => !empty($src['module_vm_catalog_utr_password']) ? $get('module_vm_catalog_utr_password') : (string)$this->config->get('module_vm_catalog_utr_password'),
 			'module_vm_catalog_bm_token'   => !empty($src['module_vm_catalog_bm_token']) ? trim($get('module_vm_catalog_bm_token')) : (string)$this->config->get('module_vm_catalog_bm_token'),
+			'module_vm_catalog_ria_per_hour' => isset($src['module_vm_catalog_ria_per_hour']) ? max(5, min(5000, (int)$src['module_vm_catalog_ria_per_hour'])) : (int)$this->config->get('module_vm_catalog_ria_per_hour'),
 			'module_vm_catalog_ria_key'    => !empty($src['module_vm_catalog_ria_key']) ? preg_replace('/[^A-Za-z0-9]/', '', $get('module_vm_catalog_ria_key')) : (string)$this->config->get('module_vm_catalog_ria_key'),
 			'module_vm_catalog_bm_photos'  => isset($src['module_vm_catalog_bm_photos']) && in_array($src['module_vm_catalog_bm_photos'], array('none', 'local', 'all'), true) ? $src['module_vm_catalog_bm_photos'] : ((string)$this->config->get('module_vm_catalog_bm_photos') ?: 'all'),
 			'module_vm_catalog_photos_v2'  => 1,
@@ -538,7 +539,15 @@ class ControllerExtensionModuleVmCatalog extends Controller {
 			return $this->json(array('error' => $this->language->get('error_permission')));
 		}
 
+		if (isset($this->request->post['per_hour'])) {
+			$this->setValue('module_vm_catalog_ria_per_hour', (string)max(5, min(5000, (int)$this->request->post['per_hour'])));
+		}
+
 		$key = isset($this->request->post['key']) ? preg_replace('/[^A-Za-z0-9]/', '', (string)$this->request->post['key']) : '';
+
+		if ($key === '' && $this->config->get('module_vm_catalog_ria_key') && isset($this->request->post['per_hour'])) {
+			return $this->json(array('ok' => 1, 'saved' => 'per_hour', 'stats' => $this->model_extension_module_vm_catalog->ria()->stats()));
+		}
 
 		if (strlen($key) < 20) {
 			return $this->json(array('error' => 'Ключ AUTO.RIA має бути рядком з ~40 латинських літер і цифр'));

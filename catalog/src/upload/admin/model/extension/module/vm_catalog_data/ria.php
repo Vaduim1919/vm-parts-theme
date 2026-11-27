@@ -95,6 +95,13 @@ class VmCatalogRia {
 
 	private $budget = null;
 
+	// requests per hour allowed by the shop's package (free: 30/h -> 25; paid packages: up to thousands)
+	public function perHour() {
+		$n = (int)$this->config->get('module_vm_catalog_ria_per_hour');
+
+		return $n > 0 ? max(5, min(5000, $n)) : self::PER_HOUR;
+	}
+
 	private function budgetLeft(&$job) {
 		$hour = (int)floor(time() / 3600);
 
@@ -103,7 +110,7 @@ class VmCatalogRia {
 			$job['hour_n'] = 0;
 		}
 
-		return self::PER_HOUR - (int)$job['hour_n'];
+		return $this->perHour() - (int)$job['hour_n'];
 	}
 
 	public function get($path) {
@@ -277,7 +284,7 @@ class VmCatalogRia {
 				}
 
 				array_shift($job['queue']);
-				usleep(250000);
+				usleep($this->perHour() > 100 ? 100000 : 250000);
 				continue;
 			}
 
@@ -311,7 +318,7 @@ class VmCatalogRia {
 
 				$this->db->query("UPDATE `{$p}vm_ria_model` SET gens_at = '" . time() . "' WHERE ria_id = '" . $md . "'");
 				array_shift($job['queue']);
-				usleep(250000);
+				usleep($this->perHour() > 100 ? 100000 : 250000);
 			}
 		}
 
@@ -403,14 +410,15 @@ class VmCatalogRia {
 			'makes'   => (int)$this->db->query("SELECT COUNT(*) AS n FROM `{$p}vm_ria_make` WHERE make_id > 0")->row['n'],
 			'models'  => (int)$this->db->query("SELECT COUNT(*) AS n FROM `{$p}vm_ria_model` WHERE gens_at > 0")->row['n'],
 			'gens'    => (int)$this->db->query("SELECT COUNT(*) AS n FROM `{$p}vm_ria_gen`")->row['n'],
-			'mods'    => (int)$this->db->query("SELECT COUNT(*) AS n FROM `{$p}vm_ria_mod`")->row['n'],
+			'mods'    => $this->db->query("SHOW TABLES LIKE '{$p}vm_engine'")->num_rows ? (int)$this->db->query("SELECT COUNT(*) AS n FROM `{$p}vm_engine`")->row['n'] : 0, // engines from BM fitment
 			'stage'   => $job ? $job['stage'] : '',
 			'left'    => $job ? count($job['queue']) : 0,
 			'finished'=> $job && !empty($job['finished']) ? date('d.m.Y H:i', $job['finished']) : '',
 			'error'   => $job ? (string)$job['error'] : '',
 			'has_key' => $this->key() !== '',
 			'waiting' => $job && !empty($job['waiting']),
-			'requests'=> $job ? (int)$job['requests'] : 0
+			'requests'=> $job ? (int)$job['requests'] : 0,
+			'per_hour'=> $this->perHour()
 		);
 	}
 }

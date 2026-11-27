@@ -157,10 +157,11 @@
         <p>Марки, моделі й покоління з офіційного API <a href="https://developers.ria.com" target="_blank" rel="noopener">developers.ria.com</a>. Запчастини прив'язуються до них за даними застосовності BM. Довідник оновлюється сам раз на півроку через cron (безкоштовний пакет AUTO.RIA: до 30 запитів на годину). За умовами AUTO.RIA у футері сайту є посилання «Довідник авто: AUTO.RIA».</p>
         <div class="form-inline" style="margin-bottom:10px">
           <input type="password" id="vm-ria-key" class="form-control" style="width:360px" autocomplete="off" placeholder="{{ ria.has_key ? 'Ключ збережено — введіть новий, щоб замінити' : 'API-ключ developers.ria.com' }}">
-          <button type="button" id="vm-ria-save" class="btn btn-default"><i class="fa fa-key"></i> Зберегти й перевірити ключ</button>
+          <label style="margin-left:8px">Запитів на годину <input type="number" id="vm-ria-ph" class="form-control" style="width:90px" min="5" max="5000" value="{{ ria.per_hour }}" title="Безкоштовний пакет: 25. Пакет 20 000: до 1500"></label>
+          <button type="button" id="vm-ria-save" class="btn btn-default"><i class="fa fa-key"></i> Зберегти</button>
           <button type="button" id="vm-ria-go" class="btn btn-primary"{% if not ria.has_key %} disabled{% endif %}><i class="fa fa-refresh"></i> Оновити довідник</button>
         </div>
-        <p id="vm-ria-stats">Марок: <b>{{ ria.makes }}</b> · моделей з поколіннями: <b>{{ ria.models }}</b> · поколінь: <b>{{ ria.gens }}</b> · двигунів: <b>{{ ria.mods }}</b>{% if ria.finished %} · оновлено {{ ria.finished }}{% endif %}{% if ria.stage and ria.stage != 'done' %} · <span class="text-warning">триває ({{ ria.stage }}, залишилось {{ ria.left }})</span>{% endif %}</p>
+        <p id="vm-ria-stats">Марок: <b>{{ ria.makes }}</b> · моделей з поколіннями: <b>{{ ria.models }}</b> · поколінь: <b>{{ ria.gens }}</b> · двигунів (з BM): <b>{{ ria.mods }}</b>{% if ria.finished %} · оновлено {{ ria.finished }}{% endif %}{% if ria.stage and ria.stage != 'done' %} · <span class="text-warning">триває ({{ ria.stage }}, залишилось {{ ria.left }})</span>{% endif %}</p>
         <p id="vm-ria-msg" class="{{ ria.error ? 'text-danger' : '' }}">{{ ria.error }}</p>
         <hr>
         <p>Роки й двигуни для підбору беруться з даних застосовності BM («OCTAVIA III (5E3) → 1.4 TSI 140 к.с. 2012–н.в.»). Після оновлення модуля вони перераховуються автоматично через cron; кнопка нижче зробить це одразу (без запитів до BM).</p>
@@ -551,10 +552,11 @@
   // ---------- AUTO.RIA
   (function () {
     var msg = $('#vm-ria-msg'), st = $('#vm-ria-stats');
-    function stats(s) { st.html('Марок: <b>' + s.makes + '</b> · моделей з поколіннями: <b>' + s.models + '</b> · поколінь: <b>' + s.gens + '</b> · двигунів: <b>' + s.mods + '</b>' + (s.finished ? ' · оновлено ' + s.finished : '') + (s.stage && s.stage !== 'done' ? ' · <span class="text-warning">триває (' + s.stage + ', залишилось ' + s.left + ')</span>' : '')); }
+    function stats(s) { st.html('Марок: <b>' + s.makes + '</b> · моделей з поколіннями: <b>' + s.models + '</b> · поколінь: <b>' + s.gens + '</b> · двигунів (з BM): <b>' + s.mods + '</b>' + (s.finished ? ' · оновлено ' + s.finished : '') + (s.stage && s.stage !== 'done' ? ' · <span class="text-warning">триває (' + s.stage + ', залишилось ' + s.left + ')</span>' : '')); }
     $('#vm-ria-save').on('click', function () {
       var b = $(this).prop('disabled', true);
-      $.post('{{ ria_key_url|e('js') }}', { key: $('#vm-ria-key').val() }, null, 'json').done(function (j) {
+      $.post('{{ ria_key_url|e('js') }}', { key: $('#vm-ria-key').val(), per_hour: $('#vm-ria-ph').val() }, null, 'json').done(function (j) {
+        if (j.saved === 'per_hour') { msg.attr('class', 'text-success').text('Збережено: до ' + j.stats.per_hour + ' запитів на годину.'); stats(j.stats); return; }
         if (j.error) { msg.attr('class', 'text-danger').text(j.error); } else { msg.attr('class', 'text-success').text('Ключ працює: AUTO.RIA віддав ' + j.makes + ' марок. Натисніть «Оновити довідник».'); $('#vm-ria-key').val('').attr('placeholder', 'Ключ збережено — введіть новий, щоб замінити'); $('#vm-ria-go').prop('disabled', false); stats(j.stats); }
       }).fail(function () { msg.attr('class', 'text-danger').text('Помилка запиту'); }).always(function () { b.prop('disabled', false); });
     });
@@ -568,7 +570,7 @@
           stats(j.stats);
           if (j.job.error) { msg.attr('class', 'text-danger').text(j.job.error); b.prop('disabled', false); return; }
           if (j.job.stage === 'done') { msg.attr('class', 'text-success').text('Готово. Довідник оновлено.'); b.prop('disabled', false); return; }
-          if (j.job.waiting || j.job.paused) { msg.attr('class', 'text-warning').text('Безкоштовний пакет AUTO.RIA дозволяє 30 запитів на годину. Завантажено частину — решта підтягнеться автоматично через cron (приблизно 25 запитів щогодини). Сторінку можна закрити.'); b.prop('disabled', false); return; }
+          if (j.job.waiting || j.job.paused) { msg.attr('class', 'text-warning').text('Вичерпано ліміт запитів AUTO.RIA на цю годину (налаштування «Запитів на годину»). Решта підтягнеться автоматично через cron наступної години. Сторінку можна закрити.'); b.prop('disabled', false); return; }
           go();
         }).fail(function () { setTimeout(go, 4000); });
       })();
