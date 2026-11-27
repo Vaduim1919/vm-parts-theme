@@ -30,6 +30,10 @@ class ControllerExtensionModuleVmTheme extends Controller {
 				$post[$key] = (string)$this->config->get($key);
 			}
 
+			// the Telegram bot token is never shown back: an empty field keeps the saved one, "-" clears it
+			$tok = isset($post['module_vm_theme_tg_token']) ? trim((string)$post['module_vm_theme_tg_token']) : '';
+			$post['module_vm_theme_tg_token'] = $tok === '-' ? '' : ($tok !== '' ? $tok : (string)$this->config->get('module_vm_theme_tg_token'));
+
 			// keep only real text edits (empty or unchanged = theme default)
 			if (isset($post['module_vm_theme_texts']) && is_array($post['module_vm_theme_texts'])) {
 				$clean = array();
@@ -99,7 +103,9 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			'module_vm_theme_fallback'  => '',
 			'module_vm_theme_head_code' => '',
 			'module_vm_theme_body_code' => '',
-			'module_vm_theme_update_url' => ''
+			'module_vm_theme_update_url' => '',
+			'module_vm_theme_tg_chat'   => '',
+			'module_vm_theme_lead_mail_off' => ''
 		);
 
 		foreach ($fields as $key => $default) {
@@ -110,6 +116,17 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			} else {
 				$data[$key] = $default;
 			}
+		}
+
+		$data['tg_token_set'] = (string)$this->config->get('module_vm_theme_tg_token') !== '';
+		$data['leads'] = array();
+		$data['leads_new'] = 0;
+		$data['lead_done_url'] = str_replace('&amp;', '&', $this->link('leadDone'));
+		$data['order_url'] = str_replace('&amp;', '&', $this->url->link('sale/order/info', 'user_token=' . $this->session->data['user_token'], true));
+
+		if ($this->db->query("SHOW TABLES LIKE '" . $this->db->escape(DB_PREFIX) . "vm\\_lead'")->num_rows) {
+			$data['leads'] = $this->db->query("SELECT * FROM `" . DB_PREFIX . "vm_lead` ORDER BY lead_id DESC LIMIT 100")->rows;
+			$data['leads_new'] = (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "vm_lead` WHERE done = '0'")->row['n'];
 		}
 
 		$sched = is_array($data['module_vm_theme_schedule']) ? $data['module_vm_theme_schedule'] : array();
@@ -243,6 +260,22 @@ class ControllerExtensionModuleVmTheme extends Controller {
 	}
 
 	// Switch the store to the vm_parts directory, remembering what was there before
+	// mark a lead (VIN request / 1-click order) handled or not
+	public function leadDone() {
+		$this->load->language($this->route);
+		$out = array();
+
+		if (!$this->user->hasPermission('modify', $this->route)) {
+			$out['error'] = $this->language->get('error_permission');
+		} elseif (isset($this->request->post['lead_id'])) {
+			$this->db->query("UPDATE `" . DB_PREFIX . "vm_lead` SET done = '" . (empty($this->request->post['done']) ? 0 : 1) . "' WHERE lead_id = '" . (int)$this->request->post['lead_id'] . "'");
+			$out['ok'] = 1;
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($out));
+	}
+
 	public function activate() {
 		$this->load->language($this->route);
 

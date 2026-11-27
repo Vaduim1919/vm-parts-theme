@@ -1,0 +1,67 @@
+{{ header }}
+<div id="vm-vin-page" class="container vm-vin-page">
+  <ul class="breadcrumb">
+    {% for breadcrumb in breadcrumbs %}<li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>{% endfor %}
+  </ul>
+  <div class="vm-vin-layout">
+    <div class="vm-box vm-vin-card">
+      <h1>{{ vm_t.text_vin_title }}</h1>
+      <p class="vm-vin-intro">{{ vm_t.text_vin_intro }}</p>
+      <form id="vm-vin-form" action="{{ action }}" method="post" novalidate>
+        <input type="hidden" name="token" value="{{ token }}">
+        <input type="text" name="website" value="" tabindex="-1" autocomplete="off" class="vm-hp" aria-hidden="true">
+        <div class="form-group" data-f="vin">
+          <label for="vin-vin">{{ vm_t.text_vin_vin }}</label>
+          <input id="vin-vin" type="text" name="vin" class="form-control input-lg vm-vin-input" maxlength="20" placeholder="{{ vm_t.text_vin_vin_ph }}" autocomplete="off" spellcheck="false">
+          <span class="help-block">{{ vm_t.text_vin_vin_help }}</span>
+        </div>
+        <div class="form-group" data-f="car">
+          <label for="vin-car">{{ vm_t.text_vin_car }}</label>
+          <input id="vin-car" type="text" name="car" class="form-control" maxlength="200" value="{{ car }}" placeholder="{{ vm_t.text_vin_car_ph }}">
+        </div>
+        <div class="form-group" data-f="parts">
+          <label for="vin-parts">{{ vm_t.text_vin_parts }} *</label>
+          <textarea id="vin-parts" name="parts" rows="4" class="form-control" maxlength="2000" placeholder="{{ vm_t.text_vin_parts_ph }}" required></textarea>
+        </div>
+        <div class="vm-vin-row">
+          <div class="form-group" data-f="phone">
+            <label for="vin-phone">{{ vm_t.text_vin_phone }} *</label>
+            <input id="vin-phone" type="tel" name="phone" class="form-control" placeholder="{{ vm_t.text_lead_phone_ph }}" autocomplete="tel" required>
+          </div>
+          <div class="form-group" data-f="name">
+            <label for="vin-name">{{ vm_t.text_vin_name }}</label>
+            <input id="vin-name" type="text" name="name" class="form-control" maxlength="64" autocomplete="name">
+          </div>
+        </div>
+        <div class="vm-lead-msg"></div>
+        <button type="submit" class="vm-buy vm-buy-lg">{{ vm_t.text_vin_send }}</button>
+        <p class="help-block small">{{ vm_t.text_lead_privacy }}</p>
+      </form>
+    </div>
+    <aside class="vm-box vm-vin-side">
+      <p><i class="fa fa-info-circle"></i> {{ vm_t.text_vin_where }}</p>
+      {% if vm.phone %}<p><i class="fa fa-phone"></i> <a href="{{ vm.phone_href }}">{{ vm.phone }}</a></p>{% endif %}
+      {% if vm.viber or vm.telegram %}<p class="vm-vin-msg">{% if vm.viber %}<a href="{{ vm.viber }}" class="vm-msg vm-msg-viber" aria-label="Viber"><i class="fa fa-phone"></i></a>{% endif %}{% if vm.telegram %}<a href="{{ vm.telegram }}" class="vm-msg vm-msg-tg" aria-label="Telegram" target="_blank" rel="noopener"><i class="fa fa-paper-plane"></i></a>{% endif %}</p>{% endif %}
+      {% if vm.hours %}<p class="text-muted">{{ vm.hours }}</p>{% endif %}
+    </aside>
+  </div>
+</div>
+<script>
+(function () {
+  var f = $('#vm-vin-form');
+  f.find('[name=vin]').on('input', function () { var p = this.selectionStart; this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); try { this.setSelectionRange(p, p); } catch (e) {} });
+  f.on('submit', function (e) {
+    e.preventDefault();
+    var b = f.find('[type=submit]'), m = f.find('.vm-lead-msg');
+    f.find('.has-error').removeClass('has-error').find('.vm-err').remove();
+    m.removeClass('text-danger').text(''); b.prop('disabled', true);
+    $.post(f.attr('action'), f.serialize(), null, 'json').done(function (r) {
+      if (r.success) { f.replaceWith($('<div class="vm-lead-ok"><i class="fa fa-check-circle"></i> </div>').append(document.createTextNode(r.success))); return; }
+      if (r.errors) { $.each(r.errors, function (k, v) { var g = f.find('[data-f=' + k + ']').addClass('has-error'); g.append($('<span class="help-block vm-err"></span>').text(v)); }); }
+      if (r.error) { m.addClass('text-danger').text(r.error); }
+      b.prop('disabled', false);
+    }).fail(function () { m.addClass('text-danger').text('{{ vm_t.text_lead_expired|e('js') }}'); b.prop('disabled', false); });
+  });
+})();
+</script>
+{{ footer }}

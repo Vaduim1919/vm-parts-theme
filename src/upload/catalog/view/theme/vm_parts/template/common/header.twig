@@ -38,6 +38,7 @@
 <div class="vm-topbar">
   <div class="container vm-row">
     <nav class="vm-toplinks" aria-label="Інформація">
+      <a href="{{ vm_vin_url }}" class="vm-toplink-vin"><i class="fa fa-search"></i> {{ vm_t.text_vin_link }}</a>
       {% for info in vm_infos %}<a href="{{ info.href }}">{{ info.title }}</a>{% endfor %}
       <a href="{{ vm_contact }}">{{ vm_t.text_contacts }}</a>
     </nav>
@@ -113,6 +114,7 @@
   </div>
   <div class="vm-drawer-body">
     {% if vm_carbar %}<button type="button" class="vm-drawer-garage" onclick="vmDrawer(false);vmCarOpen()"><i class="fa fa-car"></i> <span>{% if vm_garage %}{{ vm_garage.label }}{% else %}{{ vm_t.text_car_pick }}{% endif %}</span><i class="fa fa-angle-right"></i></button>{% endif %}
+    <a href="{{ vm_vin_url }}" class="vm-drawer-garage vm-drawer-vin"><i class="fa fa-search"></i> <span>{{ vm_t.text_vin_link }}</span><i class="fa fa-angle-right"></i></a>
     <div class="vm-drawer-title">{{ vm_t.text_catalog }}</div>
     <ul class="vm-drawer-cats">
       {% for cat in vm_menu %}

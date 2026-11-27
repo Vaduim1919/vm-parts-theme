@@ -256,6 +256,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 			case 'common/header':
 				$this->forceHttps();
 				$data['vm_home'] = $this->url->link('common/home');
+				$data['vm_vin_url'] = $this->url->link('extension/module/vm_theme/vin');
 				$data['vm_cart_link'] = $this->url->link('checkout/cart');
 				$data['vm_cart_count'] = $this->cartCount();
 				$this->carBar($data);
@@ -1304,6 +1305,7 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		}
 
 		$this->productExtras($data);
+		$this->productLd($data);
 
 		// the visitor's car is known, the product has a fitment list, and the car is not in it
 		$data['vm_nofit'] = '';
@@ -3092,5 +3094,361 @@ class ControllerExtensionModuleVmTheme extends Controller {
 		$data['header'] = $this->load->controller('common/header');
 
 		$this->response->setOutput($this->load->view('product/category', $data));
+	}
+
+	// ---------- leads: "buy in 1 click" and "parts by VIN" ----------
+
+	private function leadsInstall() {
+		$this->db->query("CREATE TABLE IF NOT EXISTS `" . DB_PREFIX . "vm_lead` (
+			`lead_id` INT(11) NOT NULL AUTO_INCREMENT,
+			`type` VARCHAR(8) NOT NULL DEFAULT 'vin',
+			`vin` VARCHAR(32) NOT NULL DEFAULT '',
+			`car` VARCHAR(255) NOT NULL DEFAULT '',
+			`parts` TEXT NOT NULL,
+			`name` VARCHAR(64) NOT NULL DEFAULT '',
+			`phone` VARCHAR(32) NOT NULL DEFAULT '',
+			`order_id` INT(11) NOT NULL DEFAULT '0',
+			`ip` VARCHAR(45) NOT NULL DEFAULT '',
+			`done` TINYINT(1) NOT NULL DEFAULT '0',
+			`date_added` DATETIME NOT NULL,
+			PRIMARY KEY (`lead_id`), KEY `ip_date` (`ip`, `date_added`)
+		) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4");
+	}
+
+	private static function cleanPhone($phone) {
+		$d = preg_replace('/\D/', '', (string)$phone);
+
+		if (strlen($d) == 10 && $d[0] === '0') {
+			$d = '38' . $d;
+		}
+
+		return (strlen($d) >= 11 && strlen($d) <= 13) ? '+' . $d : '';
+	}
+
+	private static function clip($s, $n) {
+		$s = trim(preg_replace('/\s+/u', ' ', strip_tags(html_entity_decode((string)$s, ENT_QUOTES, 'UTF-8'))));
+
+		return mb_substr($s, 0, $n, 'UTF-8');
+	}
+
+	// a form token in the session + a honeypot field + max 10 leads per IP per hour
+	private function leadToken() {
+		if (empty($this->session->data['vm_lead_token'])) {
+			$this->session->data['vm_lead_token'] = bin2hex(function_exists('random_bytes') ? random_bytes(12) : md5(uniqid('', true), true));
+		}
+
+		return $this->session->data['vm_lead_token'];
+	}
+
+	private function leadGuard() {
+		$t = $this->texts();
+		$post = $this->request->post;
+
+		if ($this->request->server['REQUEST_METHOD'] !== 'POST' || empty($post['token']) || empty($this->session->data['vm_lead_token']) || !hash_equals($this->session->data['vm_lead_token'], (string)$post['token'])) {
+			return $t['text_lead_expired'];
+		}
+
+		if (!empty($post['website'])) {
+			return $t['text_lead_expired']; // honeypot filled: a bot
+		}
+
+		$this->leadsInstall();
+		$ip = mb_substr((string)$this->request->server['REMOTE_ADDR'], 0, 45);
+		$n = (int)$this->db->query("SELECT COUNT(*) AS n FROM `" . DB_PREFIX . "vm_lead` WHERE ip = '" . $this->db->escape($ip) . "' AND date_added > DATE_SUB(NOW(), INTERVAL 1 HOUR)")->row['n'];
+
+		return $n >= 10 ? $t['text_lead_limit'] : '';
+	}
+
+	private function leadSave($type, $vin, $car, $parts, $name, $phone, $order_id = 0) {
+		$this->db->query("INSERT INTO `" . DB_PREFIX . "vm_lead` SET type = '" . $this->db->escape($type) . "', vin = '" . $this->db->escape($vin) . "', car = '" . $this->db->escape($car) . "',
+			parts = '" . $this->db->escape($parts) . "', name = '" . $this->db->escape($name) . "', phone = '" . $this->db->escape($phone) . "', order_id = '" . (int)$order_id . "',
+			ip = '" . $this->db->escape(mb_substr((string)$this->request->server['REMOTE_ADDR'], 0, 45)) . "', date_added = NOW()");
+
+		return (int)$this->db->getLastId();
+	}
+
+	// notify the shop: Telegram (bot token + chat id in the theme settings) and e-mail
+	private function leadNotify($subject, $lines) {
+		$text = $subject . "\n" . implode("\n", array_filter($lines, 'strlen'));
+		$token = trim((string)$this->config->get('module_vm_theme_tg_token'));
+		$chat = trim((string)$this->config->get('module_vm_theme_tg_chat'));
+
+		if ($token !== '' && $chat !== '' && preg_match('/^\d+:[\w-]+$/', $token) && function_exists('curl_init')) {
+			$ch = curl_init('https://api.telegram.org/bot' . $token . '/sendMessage');
+			curl_setopt_array($ch, array(
+				CURLOPT_POST           => true,
+				CURLOPT_POSTFIELDS     => http_build_query(array('chat_id' => $chat, 'text' => $text, 'disable_web_page_preview' => 1)),
+				CURLOPT_RETURNTRANSFER => true,
+				CURLOPT_CONNECTTIMEOUT => 4,
+				CURLOPT_TIMEOUT        => 6,
+				CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS
+			));
+			curl_exec($ch);
+			curl_close($ch);
+		}
+
+		if (!$this->config->get('module_vm_theme_lead_mail_off') && $this->config->get('config_email')) {
+			try {
+				$mail = new Mail($this->config->get('config_mail_engine'));
+				$mail->parameter = $this->config->get('config_mail_parameter');
+				$mail->smtp_hostname = $this->config->get('config_mail_smtp_hostname');
+				$mail->smtp_username = $this->config->get('config_mail_smtp_username');
+				$mail->smtp_password = html_entity_decode($this->config->get('config_mail_smtp_password'), ENT_QUOTES, 'UTF-8');
+				$mail->smtp_port = $this->config->get('config_mail_smtp_port');
+				$mail->smtp_timeout = $this->config->get('config_mail_smtp_timeout');
+				$mail->setTo($this->config->get('config_email'));
+				$mail->setFrom($this->config->get('config_email'));
+				$mail->setSender(html_entity_decode($this->config->get('config_name'), ENT_QUOTES, 'UTF-8'));
+				$mail->setSubject($subject);
+				$mail->setText($text);
+				$mail->send();
+			} catch (\Exception $e) {
+				$this->log->write('vm_theme lead mail: ' . $e->getMessage());
+			}
+		}
+	}
+
+	private function leadOut($a) {
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->addHeader('Cache-Control: no-store');
+		$this->response->setOutput(json_encode($a, JSON_UNESCAPED_UNICODE));
+	}
+
+	// "Buy in 1 click": phone only, creates a normal order the manager confirms by phone
+	public function quick() {
+		$t = $this->texts();
+
+		if ($err = $this->leadGuard()) {
+			return $this->leadOut(array('error' => $err));
+		}
+
+		$post = $this->request->post;
+		$phone = self::cleanPhone(isset($post['phone']) ? $post['phone'] : '');
+		$name = self::clip(isset($post['name']) ? $post['name'] : '', 64);
+		$qty = max(1, min(999, (int)(isset($post['quantity']) ? $post['quantity'] : 1)));
+
+		if ($phone === '') {
+			return $this->leadOut(array('error' => $t['text_lead_phone']));
+		}
+
+		$this->load->model('catalog/product');
+		$p = $this->model_catalog_product->getProduct(isset($post['product_id']) ? (int)$post['product_id'] : 0);
+
+		if (!$p) {
+			return $this->leadOut(array('error' => $t['text_lead_expired']));
+		}
+
+		$qty = max($qty, (int)$p['minimum']);
+		$unit = (float)((float)$p['special'] ? $p['special'] : (!empty($p['discount']) ? $p['discount'] : $p['price']));
+		$tax = $this->tax->getTax($unit, $p['tax_class_id']);
+		$total = ($unit + $tax) * $qty;
+		$cur = isset($this->session->data['currency']) ? $this->session->data['currency'] : $this->config->get('config_currency');
+		$parts = explode(' ', $name, 2);
+		$customer_id = $this->customer->isLogged() ? (int)$this->customer->getId() : 0;
+
+		$order = array(
+			'invoice_prefix' => $this->config->get('config_invoice_prefix'),
+			'store_id' => (int)$this->config->get('config_store_id'),
+			'store_name' => $this->config->get('config_name'),
+			'store_url' => $this->config->get('config_url') ? $this->config->get('config_url') : HTTP_SERVER,
+			'customer_id' => $customer_id,
+			'customer_group_id' => $customer_id ? (int)$this->customer->getGroupId() : (int)$this->config->get('config_customer_group_id'),
+			'firstname' => $parts[0] !== '' ? $parts[0] : $t['text_quick_name'],
+			'lastname' => isset($parts[1]) ? $parts[1] : '',
+			'email' => $customer_id ? $this->customer->getEmail() : 'quick@' . preg_replace('/^www\./', '', (string)parse_url(HTTP_SERVER, PHP_URL_HOST)),
+			'telephone' => $phone,
+			'custom_field' => array(),
+			'payment_firstname' => $parts[0], 'payment_lastname' => isset($parts[1]) ? $parts[1] : '', 'payment_company' => '', 'payment_address_1' => '', 'payment_address_2' => '',
+			'payment_city' => '', 'payment_postcode' => '', 'payment_country' => '', 'payment_country_id' => 0, 'payment_zone' => '', 'payment_zone_id' => 0,
+			'payment_address_format' => '', 'payment_custom_field' => array(),
+			'payment_method' => $t['text_quick_payment'], 'payment_code' => 'cod',
+			'shipping_firstname' => $parts[0], 'shipping_lastname' => isset($parts[1]) ? $parts[1] : '', 'shipping_company' => '', 'shipping_address_1' => '', 'shipping_address_2' => '',
+			'shipping_city' => '', 'shipping_postcode' => '', 'shipping_country' => '', 'shipping_country_id' => 0, 'shipping_zone' => '', 'shipping_zone_id' => 0,
+			'shipping_address_format' => '', 'shipping_custom_field' => array(),
+			'shipping_method' => $t['text_quick_shipping'], 'shipping_code' => 'vm_quick.vm_quick',
+			'products' => array(array(
+				'product_id' => (int)$p['product_id'], 'name' => $p['name'], 'model' => $p['model'], 'option' => array(), 'download' => array(),
+				'quantity' => $qty, 'subtract' => (int)$p['subtract'], 'price' => $unit, 'total' => $unit * $qty, 'tax' => $tax, 'reward' => 0
+			)),
+			'vouchers' => array(),
+			'comment' => $t['text_quick_comment'],
+			'total' => $total,
+			'affiliate_id' => 0, 'commission' => 0, 'marketing_id' => 0, 'tracking' => '',
+			'language_id' => (int)$this->config->get('config_language_id'),
+			'currency_id' => (int)$this->currency->getId($cur), 'currency_code' => $cur, 'currency_value' => $this->currency->getValue($cur),
+			'ip' => (string)$this->request->server['REMOTE_ADDR'],
+			'forwarded_ip' => '',
+			'user_agent' => isset($this->request->server['HTTP_USER_AGENT']) ? mb_substr($this->request->server['HTTP_USER_AGENT'], 0, 255) : '',
+			'accept_language' => isset($this->request->server['HTTP_ACCEPT_LANGUAGE']) ? mb_substr($this->request->server['HTTP_ACCEPT_LANGUAGE'], 0, 255) : '',
+			'totals' => array(
+				array('code' => 'sub_total', 'title' => $t['text_quick_subtotal'], 'value' => $unit * $qty, 'sort_order' => 1),
+				array('code' => 'total', 'title' => $t['text_quick_total'], 'value' => $total, 'sort_order' => 9)
+			)
+		);
+
+		if ($tax > 0) {
+			array_splice($order['totals'], 1, 0, array(array('code' => 'tax', 'title' => $this->language->get('text_tax') !== 'text_tax' ? $this->language->get('text_tax') : 'Tax', 'value' => $tax * $qty, 'sort_order' => 5)));
+		}
+
+		$this->load->model('checkout/order');
+		$order_id = (int)$this->model_checkout_order->addOrder($order);
+		$this->model_checkout_order->addOrderHistory($order_id, (int)$this->config->get('config_order_status_id'), $t['text_quick_comment']);
+		$this->leadSave('quick', '', '', $qty . ' × ' . $p['model'] . ' ' . $p['name'], $name, $phone, $order_id);
+
+		$this->leadNotify(sprintf($t['text_quick_subject'], $order_id), array(
+			$p['name'] . ' (' . $p['model'] . ') × ' . $qty,
+			$t['text_quick_total'] . ': ' . $this->currency->format($total, $cur),
+			$phone . ($name !== '' ? ' — ' . $name : ''),
+			$this->url->link('product/product', 'product_id=' . (int)$p['product_id'])
+		));
+
+		return $this->leadOut(array('success' => sprintf($t['text_quick_done'], $order_id)));
+	}
+
+	// "Parts by VIN": the page (GET) and the request (POST)
+	public function vin() {
+		$t = $this->texts();
+
+		if ($this->request->server['REQUEST_METHOD'] === 'POST') {
+			if ($err = $this->leadGuard()) {
+				return $this->leadOut(array('error' => $err));
+			}
+
+			$post = $this->request->post;
+			$vin = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)(isset($post['vin']) ? $post['vin'] : '')));
+			$car = self::clip(isset($post['car']) ? $post['car'] : '', 200);
+			$parts = self::clip(isset($post['parts']) ? $post['parts'] : '', 2000);
+			$name = self::clip(isset($post['name']) ? $post['name'] : '', 64);
+			$phone = self::cleanPhone(isset($post['phone']) ? $post['phone'] : '');
+			$errors = array();
+
+			if ($vin !== '' && (strlen($vin) != 17 || preg_match('/[IOQ]/', $vin))) {
+				$errors['vin'] = $t['text_vin_bad'];
+			}
+
+			if ($vin === '' && mb_strlen($car, 'UTF-8') < 3) {
+				$errors['vin'] = $t['text_vin_need'];
+			}
+
+			if (mb_strlen($parts, 'UTF-8') < 2) {
+				$errors['parts'] = $t['text_vin_parts_need'];
+			}
+
+			if ($phone === '') {
+				$errors['phone'] = $t['text_lead_phone'];
+			}
+
+			if ($errors) {
+				return $this->leadOut(array('errors' => $errors));
+			}
+
+			$id = $this->leadSave('vin', $vin, $car, $parts, $name, $phone);
+			$this->leadNotify(sprintf($t['text_vin_subject'], $id), array(
+				$vin !== '' ? 'VIN: ' . $vin : '',
+				$car !== '' ? $t['text_vin_car'] . ': ' . $car : '',
+				$t['text_vin_parts'] . ': ' . $parts,
+				$phone . ($name !== '' ? ' — ' . $name : '')
+			));
+
+			return $this->leadOut(array('success' => $t['text_vin_done']));
+		}
+
+		$this->document->setTitle($t['text_vin_title']);
+		$this->document->setDescription($t['text_vin_meta']);
+		$this->document->addLink($this->url->link('extension/module/vm_theme/vin'), 'canonical');
+
+		$g = $this->vmTablesExist() ? $this->garage() : false;
+		$data = array(
+			'vm_t'        => $t,
+			'vm'          => $this->settings(),
+			'token'       => $this->leadToken(),
+			'action'      => $this->url->link('extension/module/vm_theme/vin'),
+			'car'         => $g ? trim($g['make'] . ' ' . $g['model'] . (!empty($g['year']) ? ' ' . $g['year'] : '')) : '',
+			'breadcrumbs' => array(
+				array('text' => $this->language->get('text_home'), 'href' => $this->url->link('common/home')),
+				array('text' => $t['text_vin_title'], 'href' => $this->url->link('extension/module/vm_theme/vin'))
+			),
+			'column_left' => '', 'column_right' => '', 'content_top' => '', 'content_bottom' => '',
+			'footer'      => $this->load->controller('common/footer'),
+			'header'      => $this->load->controller('common/header')
+		);
+
+		$this->response->setOutput($this->load->view('extension/module/vm_vin', $data));
+	}
+
+	// schema.org Product + BreadcrumbList for search engines (price, stock, brand, article)
+	private function productLd(&$data) {
+		$this->load->model('catalog/product');
+		$p = $this->model_catalog_product->getProduct((int)$data['product_id']);
+
+		if (!$p) {
+			return;
+		}
+
+		$unit = (float)((float)$p['special'] ? $p['special'] : $p['price']);
+		$price = $this->tax->calculate($unit, $p['tax_class_id'], $this->config->get('config_tax'));
+		$cur = $this->config->get('config_currency');
+		$url = $this->url->link('product/product', 'product_id=' . (int)$p['product_id']);
+		$img = array();
+
+		if ($p['image'] && is_file(DIR_IMAGE . $p['image'])) {
+			$img[] = ($this->isSecure() ? HTTPS_SERVER : HTTP_SERVER) . 'image/' . str_replace(' ', '%20', $p['image']);
+		}
+
+		$desc = self::clip($p['meta_description'] !== '' ? $p['meta_description'] : $p['description'], 300);
+		$ld = array(
+			'@context' => 'https://schema.org',
+			'@type'    => 'Product',
+			'name'     => html_entity_decode($p['name'], ENT_QUOTES, 'UTF-8'),
+			'sku'      => html_entity_decode($p['model'], ENT_QUOTES, 'UTF-8'),
+			'mpn'      => html_entity_decode($p['mpn'] !== '' ? $p['mpn'] : $p['model'], ENT_QUOTES, 'UTF-8'),
+			'url'      => str_replace('&amp;', '&', $url),
+			'offers'   => array(
+				'@type'         => 'Offer',
+				'url'           => str_replace('&amp;', '&', $url),
+				'priceCurrency' => $cur,
+				'price'         => number_format($this->currency->format($price, $cur, '', false), 2, '.', ''),
+				'availability'  => 'https://schema.org/' . ((int)$p['quantity'] > 0 ? 'InStock' : 'BackOrder'),
+				'itemCondition' => 'https://schema.org/NewCondition',
+				'seller'        => array('@type' => 'Organization', 'name' => html_entity_decode($this->config->get('config_name'), ENT_QUOTES, 'UTF-8'))
+			)
+		);
+
+		if ($img) {
+			$ld['image'] = $img;
+		}
+
+		if ($desc !== '') {
+			$ld['description'] = $desc;
+		}
+
+		if (!empty($p['manufacturer'])) {
+			$ld['brand'] = array('@type' => 'Brand', 'name' => html_entity_decode($p['manufacturer'], ENT_QUOTES, 'UTF-8'));
+		}
+
+		if ($p['ean'] !== '' && preg_match('/^\d{8,14}$/', $p['ean'])) {
+			$ld['gtin'] = $p['ean'];
+		}
+
+		if (!empty($p['reviews']) && (float)$p['rating'] > 0) {
+			$ld['aggregateRating'] = array('@type' => 'AggregateRating', 'ratingValue' => (float)$p['rating'], 'reviewCount' => (int)$p['reviews']);
+		}
+
+		$out = array($ld);
+
+		if (!empty($data['breadcrumbs']) && count($data['breadcrumbs']) > 1) {
+			$items = array();
+
+			foreach (array_values($data['breadcrumbs']) as $i => $b) {
+				$items[] = array('@type' => 'ListItem', 'position' => $i + 1, 'name' => self::clip($b['text'], 120) !== '' ? self::clip($b['text'], 120) : $this->config->get('config_name'), 'item' => str_replace('&amp;', '&', $b['href']));
+			}
+
+			$out[] = array('@context' => 'https://schema.org', '@type' => 'BreadcrumbList', 'itemListElement' => $items);
+		}
+
+		// JSON inside <script>: escape "<" so no text can close the tag
+		$data['vm_ld'] = str_replace(array('<', '>'), array('<', '>'), json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+		$data['vm_lead_token'] = $this->leadToken();
+		$data['vm_quick_url'] = $this->url->link('extension/module/vm_theme/quick');
 	}
 }

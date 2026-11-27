@@ -172,6 +172,7 @@
               <input type="hidden" name="product_id" value="{{ product_id }}" />
               <br/>
               <button type="button" id="button-cart" data-loading-text="{{ text_loading }}" class="vm-buy vm-buy-lg">{{ button_cart }}</button>
+              {% if vm_quick_url %}<button type="button" class="vm-quick-btn" data-toggle="modal" data-target="#vm-quick"><i class="fa fa-bolt"></i> {{ vm_t.text_quick_btn }}</button>{% endif %}
             </div>
             {% if minimum > 1 %}
             <div class="alert alert-info"><i class="fa fa-info-circle"></i> {{ text_minimum }}</div>
@@ -568,4 +569,39 @@ $(document).ready(function() {
 	});
 });
 //--></script> 
+{% if vm_quick_url %}
+<div class="modal fade vm-lead-modal" id="vm-quick" tabindex="-1" role="dialog" aria-labelledby="vm-quick-h">
+  <div class="modal-dialog modal-sm" role="document"><div class="modal-content">
+    <form id="vm-quick-form" action="{{ vm_quick_url }}" method="post" novalidate>
+      <div class="modal-header"><button type="button" class="close" data-dismiss="modal" aria-label="×"><span aria-hidden="true">&times;</span></button><h4 class="modal-title" id="vm-quick-h">{{ vm_t.text_quick_title }}</h4></div>
+      <div class="modal-body">
+        <p class="vm-lead-prod"><b>{{ heading_title }}</b><br><span class="text-muted">{{ model }}</span> · {% if special %}{{ special }}{% else %}{{ price }}{% endif %}</p>
+        <p class="text-muted small">{{ vm_t.text_quick_lead }}</p>
+        <input type="hidden" name="product_id" value="{{ product_id }}"><input type="hidden" name="token" value="{{ vm_lead_token }}">
+        <input type="text" name="website" value="" tabindex="-1" autocomplete="off" class="vm-hp" aria-hidden="true">
+        <div class="form-group"><input type="tel" name="phone" class="form-control input-lg" placeholder="{{ vm_t.text_lead_phone_ph }}" autocomplete="tel" required></div>
+        <div class="form-group"><input type="text" name="name" class="form-control" placeholder="{{ vm_t.text_lead_name_ph }}" autocomplete="name" maxlength="64"></div>
+        <div class="vm-lead-msg"></div>
+        <p class="help-block small">{{ vm_t.text_lead_privacy }}</p>
+      </div>
+      <div class="modal-footer"><button type="submit" class="vm-buy vm-buy-lg btn-block">{{ vm_t.text_quick_send }}</button></div>
+    </form>
+  </div></div>
+</div>
+<script>
+$('#vm-quick').on('shown.bs.modal', function () { $(this).find('[name=phone]').trigger('focus'); });
+$('#vm-quick-form').on('submit', function (e) {
+  e.preventDefault();
+  var f = $(this), b = f.find('[type=submit]'), m = f.find('.vm-lead-msg');
+  var d = f.serializeArray(); d.push({name: 'quantity', value: $('#input-quantity').val() || 1});
+  b.prop('disabled', true); m.removeClass('text-danger text-success').text('');
+  $.post(f.attr('action'), $.param(d), null, 'json').done(function (r) {
+    if (r.success) { f.find('.modal-body').html('<p class="vm-lead-ok"><i class="fa fa-check-circle"></i> ' + vmLeadEsc(r.success) + '</p>'); f.find('.modal-footer').remove(); }
+    else { m.addClass('text-danger').text(r.error || ''); b.prop('disabled', false); }
+  }).fail(function () { m.addClass('text-danger').text('{{ vm_t.text_lead_expired|e('js') }}'); b.prop('disabled', false); });
+});
+function vmLeadEsc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+</script>
+{% endif %}
+{% if vm_ld %}<script type="application/ld+json">{{ vm_ld }}</script>{% endif %}
 {{ footer }} 

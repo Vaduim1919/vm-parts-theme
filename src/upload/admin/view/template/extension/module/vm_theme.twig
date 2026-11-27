@@ -61,6 +61,7 @@
             <li><a href="#tab-home" data-toggle="tab">{{ tab_home }}</a></li>
             <li><a href="#tab-blocks" data-toggle="tab">{{ tab_blocks }}</a></li>
             <li><a href="#tab-texts" data-toggle="tab">{{ tab_texts }}</a></li>
+            <li><a href="#tab-leads" data-toggle="tab">{{ tab_leads }}{% if leads_new %} <span class="label label-danger" id="leads-badge">{{ leads_new }}</span>{% endif %}</a></li>
             <li><a href="#tab-code" data-toggle="tab">{{ tab_code }}</a></li>
             <li><a href="#tab-update" data-toggle="tab">{{ tab_update }} <span class="label label-default">{{ version }}</span></a></li>
           </ul>
@@ -185,6 +186,29 @@
                 {% endfor %}
               </div>
             </div>
+            <div class="tab-pane" id="tab-leads">
+              <p class="help-block">{{ help_leads }}</p>
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-tgt">{{ entry_tg_token }}</label><div class="col-sm-9"><input id="i-tgt" type="password" name="module_vm_theme_tg_token" value="" class="form-control" autocomplete="new-password" placeholder="{% if tg_token_set %}{{ text_tg_token_saved }}{% else %}123456789:AA...{% endif %}"><p class="help-block">{{ help_tg_token }}</p></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label" for="i-tgc">{{ entry_tg_chat }}</label><div class="col-sm-9"><input id="i-tgc" type="text" name="module_vm_theme_tg_chat" value="{{ module_vm_theme_tg_chat }}" class="form-control" placeholder="123456789"><p class="help-block">{{ help_tg_chat }}</p></div></div>
+              <div class="form-group"><label class="col-sm-3 control-label">{{ entry_lead_mail }}</label><div class="col-sm-9"><label class="checkbox-inline"><input type="checkbox" name="module_vm_theme_lead_mail_off" value="1" {% if module_vm_theme_lead_mail_off %}checked{% endif %}> {{ text_lead_mail_off }}</label></div></div>
+              <h4 style="margin-top:24px">{{ text_leads_list }}</h4>
+              {% if leads %}
+              <div class="table-responsive"><table class="table table-bordered table-condensed" id="leads-table">
+                <thead><tr><th>{{ column_lead_date }}</th><th>{{ column_lead_type }}</th><th>{{ column_lead_contact }}</th><th>{{ column_lead_what }}</th><th style="width:90px">{{ column_lead_done }}</th></tr></thead>
+                <tbody>
+                {% for l in leads %}
+                <tr{% if not l.done %} class="warning"{% endif %}>
+                  <td style="white-space:nowrap">{{ l.date_added }}</td>
+                  <td>{% if l.type == 'quick' %}<span class="label label-success">{{ text_lead_quick }}</span>{% if l.order_id %}<br><a href="{{ order_url }}&order_id={{ l.order_id }}" target="_blank">№{{ l.order_id }}</a>{% endif %}{% else %}<span class="label label-info">VIN</span>{% endif %}</td>
+                  <td style="white-space:nowrap"><a href="tel:{{ l.phone|e }}">{{ l.phone|e }}</a>{% if l.name %}<br>{{ l.name|e }}{% endif %}</td>
+                  <td>{% if l.vin %}<code>{{ l.vin|e }}</code><br>{% endif %}{% if l.car %}<b>{{ l.car|e }}</b><br>{% endif %}{{ l.parts|e|nl2br }}</td>
+                  <td class="text-center"><input type="checkbox" class="lead-done" data-id="{{ l.lead_id }}" {% if l.done %}checked{% endif %}></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+              </table></div>
+              {% else %}<p class="text-muted">{{ text_leads_empty }}</p>{% endif %}
+            </div>
             <div class="tab-pane" id="tab-code">
               <div class="form-group"><label class="col-sm-3 control-label" for="i-head">{{ entry_head_code }}</label><div class="col-sm-9"><textarea id="i-head" name="module_vm_theme_head_code" rows="14" class="form-control" style="font-family:monospace;font-size:12px">{{ module_vm_theme_head_code }}</textarea><p class="help-block">{{ help_head_code }}</p></div></div>
               <div class="form-group"><label class="col-sm-3 control-label" for="i-body">{{ entry_body_code }}</label><div class="col-sm-9"><textarea id="i-body" name="module_vm_theme_body_code" rows="5" class="form-control" style="font-family:monospace;font-size:12px">{{ module_vm_theme_body_code }}</textarea></div></div>
@@ -248,5 +272,14 @@ function vmTxFilter() {
 }
 $(document).on('input', '#vm-tx-find', vmTxFilter);
 $(document).on('change', '#vm-tx-edited', vmTxFilter);
+</script>
+<script>
+$('#leads-table').on('change', '.lead-done', function () {
+  var c = this, tr = $(c).closest('tr');
+  $.post('{{ lead_done_url }}', {lead_id: $(c).data('id'), done: c.checked ? 1 : 0}, function (r) {
+    if (r.ok) { tr.toggleClass('warning', !c.checked); var n = $('#leads-table .lead-done:not(:checked)').length; $('#leads-badge').text(n).toggle(n > 0); }
+    else { alert(r.error || 'Error'); c.checked = !c.checked; }
+  }, 'json');
+});
 </script>
 {{ footer }}
